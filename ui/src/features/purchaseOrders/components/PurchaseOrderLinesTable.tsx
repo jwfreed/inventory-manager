@@ -1,5 +1,6 @@
 import type { PurchaseOrderLine } from '@api/types'
 import { Button, DataTable } from '@shared/ui'
+import { formatNumber } from '../../../lib/formatters'
 
 const emptyMessage = 'No lines on this purchase order.'
 
@@ -8,6 +9,11 @@ type Props = {
   canCloseLine?: (line: PurchaseOrderLine) => boolean
   closingLineId?: string | null
   onCloseLineRequest?: (line: PurchaseOrderLine) => void
+  showCostColumns?: boolean
+}
+
+function computeRemaining(line: PurchaseOrderLine): number {
+  return (line.quantityOrdered ?? 0) - (line.quantityReceived ?? 0)
 }
 
 export function PurchaseOrderLinesTable({
@@ -15,6 +21,7 @@ export function PurchaseOrderLinesTable({
   canCloseLine,
   closingLineId,
   onCloseLineRequest,
+  showCostColumns = true,
 }: Props) {
   return (
     <DataTable
@@ -54,13 +61,18 @@ export function PurchaseOrderLinesTable({
         },
         {
           id: 'qty',
-          header: 'Qty',
-          cell: (row) => row.quantityOrdered ?? '—',
+          header: 'Ordered',
+          cell: (row) => row.quantityOrdered != null ? formatNumber(row.quantityOrdered) : '—',
         },
         {
           id: 'received',
           header: 'Received',
-          cell: (row) => row.quantityReceived ?? '—',
+          cell: (row) => row.quantityReceived != null ? formatNumber(row.quantityReceived) : '—',
+        },
+        {
+          id: 'remaining',
+          header: 'Remaining',
+          cell: (row) => formatNumber(computeRemaining(row)),
         },
         {
           id: 'uom',
@@ -72,22 +84,26 @@ export function PurchaseOrderLinesTable({
           header: 'Status',
           cell: (row) => row.status ?? 'open',
         },
-        {
-          id: 'unitPrice',
-          header: 'Unit Price',
-          cell: (row) => row.unitPrice ? `$${row.unitPrice.toFixed(2)}` : '—',
-          cellClassName: 'font-mono text-right',
-        },
-        {
-          id: 'extendedPrice',
-          header: 'Extended',
-          cell: (row) => {
-            if (!row.unitPrice || !row.quantityOrdered) return '—'
-            const extended = row.unitPrice * row.quantityOrdered
-            return `$${extended.toFixed(2)}`
-          },
-          cellClassName: 'font-mono text-right font-semibold',
-        },
+        ...(showCostColumns
+          ? [
+              {
+                id: 'unitPrice',
+                header: 'Unit Price',
+                cell: (row: PurchaseOrderLine) => row.unitPrice ? `$${row.unitPrice.toFixed(2)}` : '—',
+                cellClassName: 'font-mono text-right',
+              },
+              {
+                id: 'extendedPrice',
+                header: 'Extended',
+                cell: (row: PurchaseOrderLine) => {
+                  if (!row.unitPrice || !row.quantityOrdered) return '—'
+                  const extended = row.unitPrice * row.quantityOrdered
+                  return `$${extended.toFixed(2)}`
+                },
+                cellClassName: 'font-mono text-right font-semibold',
+              },
+            ]
+          : []),
         {
           id: 'notes',
           header: 'Notes',

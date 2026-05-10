@@ -12,6 +12,8 @@ type Props = {
   canClose: boolean
   canCreate: boolean
   canWrite: boolean
+  canReceive?: boolean
+  receiveHref?: string
   onSubmitIntent: () => void
   onSave: () => void
   onCancelRequest: () => void
@@ -29,6 +31,8 @@ export function PurchaseOrderActionBar({
   canClose,
   canCreate,
   canWrite,
+  canReceive,
+  receiveHref,
   onSubmitIntent,
   onSave,
   onCancelRequest,
@@ -36,16 +40,21 @@ export function PurchaseOrderActionBar({
 }: Props) {
   return (
     <div className="mt-4 flex flex-wrap gap-2">
+      {canReceive && receiveHref && (
+        <Link to={receiveHref}>
+          <Button size="sm">Receive items</Button>
+        </Link>
+      )}
       {isEditable && canWrite && (
         <Button size="sm" onClick={onSubmitIntent} disabled={!isReadyToSubmit || isBusy}>
           {submitPending ? 'Submitting…' : 'Submit PO for approval'}
         </Button>
       )}
-      {canWrite ? (
-        <Button size="sm" variant="secondary" onClick={onSave} disabled={isLocked || isBusy}>
+      {!isLocked && canWrite && (
+        <Button size="sm" variant="secondary" onClick={onSave} disabled={isBusy}>
           {savePending ? 'Saving…' : 'Save draft'}
         </Button>
-      ) : null}
+      )}
       {canCancel && (
         <Button size="sm" variant="secondary" onClick={onCancelRequest} disabled={isBusy}>
           Cancel

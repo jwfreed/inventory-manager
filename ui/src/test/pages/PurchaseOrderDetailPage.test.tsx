@@ -117,6 +117,156 @@ describe('PurchaseOrderDetailPage', () => {
     expect(screen.getByText('Close purchase order')).toBeInTheDocument()
   })
 
+  it('approved PO shows Receive items as primary action', async () => {
+    renderPage()
+
+    // There should be two Receive items links (header + action bar)
+    const receiveLinks = await screen.findAllByRole('link', { name: 'Receive items' })
+    expect(receiveLinks.length).toBeGreaterThanOrEqual(1)
+    // Each should point to /receiving/receipt with poId query param
+    for (const link of receiveLinks) {
+      expect(link).toHaveAttribute('href', '/receiving/receipt?poId=po-1')
+    }
+  })
+
+  it('approved PO shows workflow guidance banner, not generic locked banner', async () => {
+    renderPage()
+
+    expect(await screen.findByText('Approved purchase order')).toBeInTheDocument()
+    expect(screen.getByText(/This PO is read-only because it has been approved/)).toBeInTheDocument()
+    expect(screen.queryByText('Locked')).toBeNull()
+  })
+
+  it('approved PO does not show Save draft button', async () => {
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+    expect(screen.queryByRole('button', { name: /Save draft/ })).toBeNull()
+  })
+
+  it('lines table shows Ordered and Remaining columns with formatted quantities', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'approved',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        lines: [
+          {
+            id: 'line-1',
+            itemId: 'item-1',
+            itemSku: 'RM-1',
+            itemName: 'Raw Material',
+            quantityOrdered: 30000,
+            quantityReceived: 9500,
+            status: 'open',
+            uom: 'g',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    // Column headers
+    expect(await screen.findByText('Ordered')).toBeInTheDocument()
+    expect(screen.getByText('Remaining')).toBeInTheDocument()
+
+    // Formatted quantities (no excessive decimals)
+    expect(screen.getByText('30,000')).toBeInTheDocument()
+    expect(screen.getByText('9,500')).toBeInTheDocument()
+    // Remaining: 30000 - 9500 = 20500
+    expect(screen.getByText('20,500')).toBeInTheDocument()
+  })
+
+  it('approved PO shows receiving progress summary above lines', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'approved',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        lines: [
+          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
+          { id: 'line-2', itemId: 'item-2', quantityOrdered: 5, quantityReceived: 5, status: 'complete', uom: 'kg' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByText(/1 of 2 lines received/)).toBeInTheDocument()
+    expect(screen.getByText(/1 line remaining/)).toBeInTheDocument()
+  })
+
+  it('draft PO shows Save draft button and not Receive items', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'draft',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        lines: [
+          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: 'Save draft' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Receive items' })).toBeNull()
+  })
+
+  it('closed PO does not show Receive items', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'closed',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        lines: [],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+    expect(screen.queryByRole('link', { name: 'Receive items' })).toBeNull()
+  })
+
   it('confirms purchase order close and invalidates purchase order queries', async () => {
     const { queryClient } = renderPage()
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')

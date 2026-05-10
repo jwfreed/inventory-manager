@@ -310,6 +310,7 @@ export default function PurchaseOrderDetailPage() {
   const statusKey = (status || po.status || 'draft').toLowerCase()
   const isSubmitted = statusKey === 'submitted'
   const canReceive = statusKey === 'approved' || statusKey === 'partially_received'
+  const receiveHref = canReceive ? `/receiving/receipt?poId=${po.id}` : ''
   const statusMeta: Record<
     string,
     { label: string; variant: 'neutral' | 'success' | 'warning' | 'danger' | 'info'; dot: string; helper: string }
@@ -449,11 +450,14 @@ export default function PurchaseOrderDetailPage() {
             vendorLabel={`${po.vendorCode ?? po.vendorId}${po.vendorName ? ` — ${po.vendorName}` : ''}`}
             poNumber={po.poNumber}
             status={currentStatus}
+            canReceive={canReceive}
+            receiveHref={receiveHref}
           />
           <PurchaseOrderAlerts
             isLocked={isLocked || !canWritePurchaseOrder}
             statusLabel={currentStatus.label}
             canReceive={canReceive}
+            receiveHref={receiveHref}
             submitError={submitError}
             approveError={approveError}
             saveError={saveError}
@@ -532,6 +536,8 @@ export default function PurchaseOrderDetailPage() {
             canClose={canCloseHeader && canVoidPurchaseOrder}
             canCreate={canWritePurchaseOrder}
             canWrite={canWritePurchaseOrder}
+            canReceive={canReceive}
+            receiveHref={receiveHref}
             onSubmitIntent={handleSubmitIntent}
             onSave={handleSave}
             onCancelRequest={() => {
@@ -552,13 +558,23 @@ export default function PurchaseOrderDetailPage() {
 
       <Section title="Lines">
         <Card>
-          <div className="mb-3 text-xs text-slate-500">
-            Ordered vs received/in-transit is not surfaced yet in this UI; use Receiving/Putaway to verify what has arrived.
-          </div>
+          {canReceive && poLines.length > 0 && (() => {
+            const receivedCount = poLines.filter((l) => l.status === 'complete').length
+            const openCount = poLines.filter((l) => l.status === 'open' || !l.status).length
+            return (
+              <div className="mb-3 text-sm text-slate-700">
+                <span className="font-medium">{receivedCount} of {poLines.length} lines received</span>
+                {openCount > 0 && (
+                  <span className="ml-2 text-slate-500">· {openCount} {openCount === 1 ? 'line' : 'lines'} remaining</span>
+                )}
+              </div>
+            )
+          })()}
           <PurchaseOrderLinesTable
             lines={po.lines ?? []}
             canCloseLine={(line) => canWritePurchaseOrder && canClosePurchaseOrderLinePolicy(po, line)}
             closingLineId={lineCloseMutation.isPending ? lineToClose : null}
+            showCostColumns={!canReceive}
             onCloseLineRequest={(line) => {
               setCloseMessage(null)
               setCloseError(null)
