@@ -1,4 +1,5 @@
 import { Input, SearchableSelect, Textarea } from '@shared/ui'
+import { formatDate } from '@shared/formatters'
 
 type LocationOption = {
   value: string
@@ -26,6 +27,15 @@ type Props = {
   onNotesChange: (value: string) => void
 }
 
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-sm text-slate-900">{value || '—'}</div>
+    </div>
+  )
+}
+
 export function PurchaseOrderDetailsForm({
   poNumber,
   orderDate,
@@ -45,6 +55,28 @@ export function PurchaseOrderDetailsForm({
   onVendorReferenceChange,
   onNotesChange,
 }: Props) {
+  if (isLocked) {
+    const shipToLabel = locationOptions.find((o) => o.value === shipToLocationId)?.label ?? ''
+    const receivingLabel = locationOptions.find((o) => o.value === receivingLocationId)?.label ?? ''
+    return (
+      <div data-testid="po-details-readonly">
+        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-800">
+          <ReadOnlyField label="Order date" value={formatDate(orderDate)} />
+          <ReadOnlyField label="Expected date" value={formatDate(expectedDate)} />
+          <ReadOnlyField label="Ship-to" value={shipToLabel} />
+          <ReadOnlyField label="Receiving" value={receivingLabel} />
+          {vendorReference && <ReadOnlyField label="Supplier ref" value={vendorReference} />}
+        </div>
+        {notes && (
+          <div className="mt-3 space-y-0.5">
+            <div className="text-xs uppercase tracking-wide text-slate-500">Notes</div>
+            <div className="text-sm text-slate-900 whitespace-pre-wrap">{notes}</div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div>
       <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-800">

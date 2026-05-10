@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import PurchaseOrderDetailPage from '@features/purchaseOrders/pages/PurchaseOrderDetailPage'
@@ -351,5 +351,120 @@ describe('PurchaseOrderDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Close PO' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Close line' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'New PO' })).toBeNull()
+  })
+
+  it('approved PO renders read-only details summary, not editable form inputs', async () => {
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    const readOnlySection = screen.getByTestId('po-details-readonly')
+    expect(readOnlySection).toBeInTheDocument()
+
+    // Should not contain any date inputs, text inputs, or textareas
+    expect(readOnlySection.querySelectorAll('input')).toHaveLength(0)
+    expect(readOnlySection.querySelectorAll('textarea')).toHaveLength(0)
+  })
+
+  it('approved PO does not show raw UUID text in details area', async () => {
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    // The "Selected: <uuid>" text from the Combobox should not be visible
+    expect(screen.queryByText(/Selected:/)).toBeNull()
+  })
+
+  it('approved PO shows operational detail labels in read-only view', async () => {
+    mockedUseLocationsList.mockReturnValue({
+      data: {
+        data: [
+          { id: 'loc-1', code: 'MAIN', name: 'Main Warehouse', type: 'warehouse' },
+          { id: 'loc-2', code: 'RECV', name: 'Receiving Dock', type: 'staging' },
+        ],
+      },
+      isLoading: false,
+    } as any)
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'approved',
+        orderDate: '2026-01-15',
+        expectedDate: '2026-01-20',
+        shipToLocationId: 'loc-1',
+        receivingLocationId: 'loc-2',
+        vendorReference: 'DEMO-REF-001',
+        notes: 'Test order notes.',
+        lines: [
+          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    const readOnly = screen.getByTestId('po-details-readonly')
+
+    // Location labels shown, not raw IDs
+    expect(screen.getByText('MAIN — Main Warehouse')).toBeInTheDocument()
+    expect(screen.getByText('RECV — Receiving Dock')).toBeInTheDocument()
+
+    // Operational field labels — scoped to the details section to avoid collision with lines table headers
+    expect(within(readOnly).getByText('Order date')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Expected date')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Ship-to')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Receiving')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Supplier ref')).toBeInTheDocument()
+    expect(screen.getByText('DEMO-REF-001')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Notes')).toBeInTheDocument()
+    expect(screen.getByText('Test order notes.')).toBeInTheDocument()
+  })
+
+  it('approved PO shows Cancel PO, not ambiguous Cancel', async () => {
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    expect(screen.getByRole('button', { name: 'Cancel PO' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
+  })
+
+  it('draft PO shows editable form inputs, not read-only summary', async () => {
+    mockedUsePurchaseOrder.mockReturnValue({
+      data: {
+        id: 'po-1',
+        poNumber: 'PO-0001',
+        vendorId: 'vendor-1',
+        vendorCode: 'SUP-1',
+        vendorName: 'Supplier',
+        status: 'draft',
+        shipToLocationId: '',
+        receivingLocationId: '',
+        lines: [],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    // Draft POs should have editable inputs, not the read-only summary
+    expect(screen.queryByTestId('po-details-readonly')).toBeNull()
+    expect(screen.getByLabelText(/Order date/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Expected date/i)).toBeInTheDocument()
   })
 })

@@ -48,7 +48,7 @@ export function PurchaseOrderActionBar({
       )}
       {canCancel && (
         <Button size="sm" variant="secondary" onClick={onCancelRequest} disabled={isBusy}>
-          Cancel
+          Cancel PO
         </Button>
       )}
       {canClose && (
