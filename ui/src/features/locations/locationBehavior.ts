@@ -279,6 +279,17 @@ export const CAPABILITY_LABELS: Array<{ key: keyof LocationCapabilities; label: 
   { key: 'canStorePackaging', label: 'Can store packaging' },
   { key: 'canConsumeForProduction', label: 'Can consume for production' },
   { key: 'canHoldFinishedGoods', label: 'Can hold finished goods' },
-  { key: 'canReserveForSales', label: 'Can reserve for sales' },
+  { key: 'canReserveForSales', label: 'Reservable inventory' },
   { key: 'canShipFrom', label: 'Can ship from' },
 ]
+
+// Roles where the user can independently toggle the reservable-inventory state.
+// For all other roles, isSellable is fixed (either always true or always false).
+export const RESERVABLE_EDITABLE_ROLES: ReadonlySet<LocationBehaviorRole> = new Set<LocationBehaviorRole>([
+  'raw_material_store',
+  'finished_goods',
+])
+
+export function isReservableEditable(role: LocationBehaviorRole): boolean {
+  return RESERVABLE_EDITABLE_ROLES.has(role)
+}

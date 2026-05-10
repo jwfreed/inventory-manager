@@ -234,6 +234,14 @@ export const DEMO_SUPPLIER = {
   name: 'Siamaya Demo Ingredient Supplier',
 }
 
+// Seed-owned vendor codes from previous focused demo seed versions.
+// These are renamed legacy codes; they should never be created by the current seed.
+// In reset mode they are deleted; in non-reset mode they are deactivated if found.
+export const LEGACY_SEED_VENDOR_CODES = [
+  'SIAMAYA-DEMO-CHOCOLATE-SUPPLIER',
+  'DEMO-CHOCOLATE-SUPPLIER',
+] as const
+
 export const DEMO_CUSTOMER = {
   code: 'SIAMAYA-DEMO-CUSTOMER',
   name: 'Siamaya Demo Customer',
@@ -366,7 +374,7 @@ function toApiError(err: unknown): ApiError {
 
 async function apiRequest<T>(
   config: SeedConfig,
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   opts: {
     token?: string
@@ -534,6 +542,12 @@ async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof m
     if (rows[0]?.proc) {
       log.info('Skipping inventory_levels_by_lpn refresh (non-essential for seed).')
     }
+    // Remove seed-owned vendor records (current and all legacy renamed codes) so the
+    // fresh seed starts with a clean supplier list. Scoped to known seed-owned codes only.
+    const seedVendorCodesToClean = [DEMO_SUPPLIER.code, ...LEGACY_SEED_VENDOR_CODES]
+    await client.query(`DELETE FROM vendors WHERE code = ANY($1::text[])`, [seedVendorCodesToClean])
+    log.info('Seed-owned vendor records removed.')
+
     log.info('Operational reset complete.')
   } finally {
     await client.end()
@@ -1050,11 +1064,34 @@ async function ensureOperationalLocations(
   return { receiving, rawStore, packStore, production, fgStage, shipping }
 }
 
+// Deactivates any legacy seed-owned vendor codes that were renamed in previous
+// seed versions. Safe to call in non-reset mode: only touches known seed-owned
+// codes and uses the API deactivate endpoint (sets active=false, does not delete).
+async function deactivateLegacySeedVendors(
+  config: SeedConfig,
+  token: string,
+  log: ReturnType<typeof makeLogger>,
+): Promise<void> {
+  // Fetch all vendors including inactive to avoid refetching after deactivation.
+  const all = await apiRequest<{ data?: Vendor[] } | Vendor[]>(config, 'GET', '/vendors', { token })
+  const rows = Array.isArray(all) ? all : all.data ?? []
+  for (const code of LEGACY_SEED_VENDOR_CODES) {
+    const found = rows.find((row) => row.code === code)
+    if (found) {
+      log.warn(`Deactivating legacy seed-owned vendor: ${code} (${found.id})`)
+      await apiRequest<Vendor>(config, 'DELETE', `/vendors/${found.id}`, { token })
+    }
+  }
+}
+
 async function ensureVendor(
   config: SeedConfig,
   token: string,
   log: ReturnType<typeof makeLogger>,
 ): Promise<Vendor> {
+  // Clean up any legacy renamed vendor codes before checking for the current one.
+  await deactivateLegacySeedVendors(config, token, log)
+
   const list = await apiRequest<{ data?: Vendor[] } | Vendor[]>(config, 'GET', '/vendors', {
     token,
     params: { active: true },

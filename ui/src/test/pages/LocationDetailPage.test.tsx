@@ -134,23 +134,30 @@ describe('LocationDetailPage: masterdata:write guard on edit', () => {
     expect(screen.getAllByText('Raw material store').length).toBeGreaterThan(0)
     expect(screen.getByText('Reservable inventory enabled')).toBeInTheDocument()
     expect(screen.getByText('Can consume for production')).toBeInTheDocument()
-    expect(screen.getByText('Can reserve for sales')).toBeInTheDocument()
+    // "Reservable inventory" now appears as the capability label (was "Can reserve for sales")
+    // It also appears in the backend-role card (SELLABLE → 'Reservable inventory') and context rail.
+    expect(screen.getAllByText('Reservable inventory').length).toBeGreaterThan(0)
     expect(screen.getByText('Current production reservation limitation')).toBeInTheDocument()
     expect(
       screen.getByText(/technically marked reservable even though it is not a customer-facing sales location/i),
     ).toBeInTheDocument()
   })
 
-  it('shows role selector and capability controls in the edit form', () => {
+  it('shows role selector and reservable-inventory checkbox in the edit form; other capabilities are read-only', () => {
     renderPage()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Edit location' })[0])
 
     expect(screen.getByLabelText(/Role/i)).toBeInTheDocument()
-    expect(screen.getByLabelText('Can receive inventory')).toBeInTheDocument()
-    expect(screen.getByLabelText('Can store raw materials')).toBeInTheDocument()
-    expect(screen.getByLabelText('Can consume for production')).toBeInTheDocument()
-    expect(screen.getByLabelText('Can reserve for sales')).toBeInTheDocument()
+    // Only the reservable checkbox is editable; other capabilities are derived indicators
+    expect(screen.getByLabelText('Reservable inventory')).toBeInTheDocument()
+    // Derived indicators are read-only — no checkbox for them
+    expect(screen.queryByLabelText('Can receive inventory')).toBeNull()
+    expect(screen.queryByLabelText('Can store raw materials')).toBeNull()
+    expect(screen.queryByLabelText('Can consume for production')).toBeNull()
+    // Derived indicators still appear as text (may appear in both detail view and form)
+    expect(screen.getAllByText('Can consume for production').length).toBeGreaterThan(0)
+    expect(screen.getByText('Derived capabilities')).toBeInTheDocument()
   })
 
   it('submits the backend role and sellable payload for a reservable raw-material store', async () => {
@@ -179,7 +186,7 @@ describe('LocationDetailPage: masterdata:write guard on edit', () => {
     renderPage()
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Edit location' })[0])
-    fireEvent.click(screen.getByLabelText('Can reserve for sales'))
+    fireEvent.click(screen.getByLabelText('Reservable inventory'))
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     expect(await screen.findByText('Save failed')).toBeInTheDocument()

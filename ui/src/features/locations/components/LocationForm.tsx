@@ -10,6 +10,7 @@ import {
   CAPABILITY_LABELS,
   defaultCapabilitiesForBehaviorRole,
   deriveLocationBehavior,
+  isReservableEditable,
   LOCATION_BEHAVIOR_ROLE_OPTIONS,
   type LocationBehaviorRole,
   type LocationCapabilities,
@@ -210,19 +211,48 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
                 {LOCATION_BEHAVIOR_ROLE_OPTIONS.find((option) => option.value === behaviorRole)?.description}
               </span>
             </label>
-            <div className="grid gap-2 md:grid-cols-2">
-              {CAPABILITY_LABELS.map((capability) => (
-                <label key={capability.key} className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={capabilities[capability.key]}
-                    onChange={(e) => setCapability(capability.key, e.target.checked)}
-                    disabled={mutation.isPending}
-                  />
-                  <span>{capability.label}</span>
-                </label>
-              ))}
+            {isReservableEditable(behaviorRole) && (
+              <label className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  aria-label="Reservable inventory"
+                  className="mt-1"
+                  checked={capabilities.canReserveForSales}
+                  onChange={(e) => setCapability('canReserveForSales', e.target.checked)}
+                  disabled={mutation.isPending}
+                />
+                <span>
+                  <span className="font-medium">Reservable inventory</span>
+                  <span className="ml-1 text-xs text-slate-500">
+                    — used by sales reservations and, currently, production component reservations.
+                  </span>
+                </span>
+              </label>
+            )}
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Derived capabilities
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                {CAPABILITY_LABELS.filter((c) => c.key !== 'canReserveForSales').map((capability) => {
+                  const enabled = capabilities[capability.key]
+                  return (
+                    <div
+                      key={capability.key}
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        enabled
+                          ? 'border-green-200 bg-green-50 text-green-800'
+                          : 'border-slate-200 bg-white text-slate-400'
+                      }`}
+                    >
+                      {enabled ? capability.label : capability.label.replace(/^Can /, 'Cannot ')}
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Derived from role. Not independently editable.
+              </p>
             </div>
             {capabilities.canReserveForSales && behaviorRole === 'raw_material_store' && (
               <p className="text-xs text-amber-700">

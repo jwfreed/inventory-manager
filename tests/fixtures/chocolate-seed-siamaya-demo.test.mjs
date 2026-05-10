@@ -21,7 +21,8 @@ const {
   DEMO_PO,
   DEMO_SKUS,
   DEMO_SO,
-  DEMO_SUPPLIER
+  DEMO_SUPPLIER,
+  LEGACY_SEED_VENDOR_CODES
 } = require('../../scripts/chocolate-seed.ts');
 
 const TEST_TENANT_SLUG = 'siamaya';
@@ -660,4 +661,72 @@ test('completed Siamaya chocolate seed is idempotent with reset disabled on reru
   assert.equal(Number(row.negative_balance_count), 0);
   assert.equal(Number(row.open_backorder_count), 0);
   assert.equal(Number(row.consumed_line_count), DEMO_BOM_COMPONENTS.length);
+});
+
+// ── Supplier integrity tests ──────────────────────────────────────────────────
+
+test('fresh reset + manual seed creates exactly one active demo supplier', { timeout: 240000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+
+  await runChocolateSeed(seedConfig('manual', tenantSlug));
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+
+  const result = await pool.query(
+    `SELECT code FROM vendors WHERE tenant_id = $1 AND active = true ORDER BY code`,
+    [tenantId]
+  );
+  const activeCodes = result.rows.map((r) => r.code);
+  assert.deepEqual(activeCodes, [DEMO_SUPPLIER.code], `Expected exactly [${DEMO_SUPPLIER.code}] but got ${JSON.stringify(activeCodes)}`);
+});
+
+test('fresh reset + manual seed does not create legacy SIAMAYA-DEMO-CHOCOLATE-SUPPLIER vendor', { timeout: 240000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+
+  await runChocolateSeed(seedConfig('manual', tenantSlug));
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+
+  const result = await pool.query(
+    `SELECT code FROM vendors WHERE tenant_id = $1 AND code = ANY($2::text[])`,
+    [tenantId, Array.from(LEGACY_SEED_VENDOR_CODES)]
+  );
+  assert.equal(result.rows.length, 0, `Legacy seed vendor codes found: ${JSON.stringify(result.rows.map((r) => r.code))}`);
+});
+
+test('non-reset manual seed rerun does not create duplicate active suppliers', { timeout: 240000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+
+  // First run (with reset)
+  await runChocolateSeed(seedConfig('manual', tenantSlug));
+  // Second run (without reset — idempotent)
+  await runChocolateSeed(seedConfig('manual', tenantSlug, { reset: false }));
+
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+  const result = await pool.query(
+    `SELECT code FROM vendors WHERE tenant_id = $1 AND active = true ORDER BY code`,
+    [tenantId]
+  );
+  const activeCodes = result.rows.map((r) => r.code);
+  assert.deepEqual(activeCodes, [DEMO_SUPPLIER.code], `Expected exactly [${DEMO_SUPPLIER.code}] after rerun but got ${JSON.stringify(activeCodes)}`);
+});
+
+test('completed mode seed creates only the expected demo supplier', { timeout: 300000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+
+  await runChocolateSeed(seedConfig('completed', tenantSlug));
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+
+  const result = await pool.query(
+    `SELECT code FROM vendors WHERE tenant_id = $1 AND active = true ORDER BY code`,
+    [tenantId]
+  );
+  const activeCodes = result.rows.map((r) => r.code);
+  assert.deepEqual(activeCodes, [DEMO_SUPPLIER.code], `Expected exactly [${DEMO_SUPPLIER.code}] in completed mode but got ${JSON.stringify(activeCodes)}`);
 });
