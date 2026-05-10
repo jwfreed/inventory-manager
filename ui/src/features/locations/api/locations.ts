@@ -13,6 +13,8 @@ export type LocationPayload = {
   code: string
   name: string
   type: string
+  role?: string | null
+  isSellable?: boolean
   active?: boolean
   parentLocationId?: string | null
   maxWeight?: number | null

@@ -4,6 +4,16 @@ import { useMutation } from '@tanstack/react-query'
 import { useAuth } from '@shared/auth'
 import type { ApiError, Location } from '../../../api/types'
 import { createLocation, updateLocation, type LocationPayload } from '../api/locations'
+import { useLocationsList } from '../queries'
+import {
+  buildLocationBehaviorPayload,
+  CAPABILITY_LABELS,
+  defaultCapabilitiesForBehaviorRole,
+  deriveLocationBehavior,
+  LOCATION_BEHAVIOR_ROLE_OPTIONS,
+  type LocationBehaviorRole,
+  type LocationCapabilities,
+} from '../locationBehavior'
 import { Alert } from '../../../components/Alert'
 import { Button } from '../../../components/Button'
 import { Card } from '../../../components/Card'
@@ -29,6 +39,18 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
   const [maxWeight, setMaxWeight] = useState(initialLocation?.maxWeight ?? '')
   const [maxVolume, setMaxVolume] = useState(initialLocation?.maxVolume ?? '')
   const [zone, setZone] = useState(initialLocation?.zone ?? '')
+  const initialBehavior = initialLocation ? deriveLocationBehavior(initialLocation) : null
+  const [behaviorRole, setBehaviorRole] = useState<LocationBehaviorRole>(
+    initialBehavior?.behaviorRole === 'warehouse_root' ? 'general_sellable' : initialBehavior?.behaviorRole ?? 'general_sellable',
+  )
+  const [capabilities, setCapabilities] = useState<LocationCapabilities>(
+    initialBehavior?.capabilities ?? defaultCapabilitiesForBehaviorRole('general_sellable', true),
+  )
+  const [formError, setFormError] = useState<string | null>(null)
+  const parentLocationsQuery = useLocationsList(
+    { active: true, limit: 200 },
+    { enabled: type !== 'warehouse', staleTime: 60_000 },
+  )
 
   useEffect(() => {
     if (!initialLocation) return
@@ -40,6 +62,10 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
     setMaxWeight(initialLocation.maxWeight ?? '')
     setMaxVolume(initialLocation.maxVolume ?? '')
     setZone(initialLocation.zone ?? '')
+    const nextBehavior = deriveLocationBehavior(initialLocation)
+    setBehaviorRole(nextBehavior.behaviorRole === 'warehouse_root' ? 'general_sellable' : nextBehavior.behaviorRole)
+    setCapabilities(nextBehavior.capabilities)
+    setFormError(null)
   }, [initialLocation])
 
   const mutation = useMutation<Location, ApiError, LocationPayload>({
@@ -54,13 +80,34 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
 
   const canSaveLocation = hasPermission('masterdata:write')
 
+  const handleBehaviorRoleChange = (nextRole: LocationBehaviorRole) => {
+    setBehaviorRole(nextRole)
+    setCapabilities(defaultCapabilitiesForBehaviorRole(nextRole, nextRole === 'general_sellable' || nextRole === 'shipping'))
+    setFormError(null)
+  }
+
+  const setCapability = (key: keyof LocationCapabilities, value: boolean) => {
+    setCapabilities((current) => ({ ...current, [key]: value }))
+    setFormError(null)
+  }
+
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!canSaveLocation) return
+    const behaviorPayload =
+      type === 'warehouse'
+        ? { role: null, isSellable: false }
+        : buildLocationBehaviorPayload(behaviorRole, capabilities, initialLocation?.role)
+    if ('error' in behaviorPayload && behaviorPayload.error) {
+      setFormError(behaviorPayload.error)
+      return
+    }
     mutation.mutate({
       code,
       name,
       type,
+      role: behaviorPayload.role,
+      isSellable: behaviorPayload.isSellable,
       active,
       parentLocationId: parentLocationId ? parentLocationId : null,
       maxWeight: maxWeight ? Number(maxWeight) : null,
@@ -72,6 +119,9 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
   return (
     <Card title={title ?? (isEdit ? 'Edit location' : 'Create location')}>
       <form className="space-y-4" onSubmit={onSubmit}>
+        {formError && (
+          <Alert variant="error" title="Inventory behavior cannot be saved" message={formError} />
+        )}
         {mutation.isError && (
           <Alert variant="error" title="Save failed" message={mutation.error.message} />
         )}
@@ -114,15 +164,73 @@ export function LocationForm({ initialLocation, onSuccess, onCancel, title }: Pr
             </Select>
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Parent Location ID</span>
-            <Input
+            <span className="text-xs uppercase tracking-wide text-slate-500">Parent location</span>
+            <Select
               value={parentLocationId}
               onChange={(e) => setParentLocationId(e.target.value)}
-              placeholder="Optional"
-              disabled={mutation.isPending}
-            />
+              disabled={mutation.isPending || type === 'warehouse' || parentLocationsQuery.isLoading}
+            >
+              <option value="">No parent</option>
+              {parentLocationsQuery.data?.data
+                ?.filter((loc) => loc.id !== initialLocation?.id)
+                .map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.code} - {loc.name}
+                  </option>
+                ))}
+              {parentLocationId &&
+                !parentLocationsQuery.data?.data?.some((loc) => loc.id === parentLocationId) && (
+                  <option value={parentLocationId}>{parentLocationId}</option>
+                )}
+            </Select>
           </label>
         </div>
+        {type !== 'warehouse' && (
+          <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Inventory behavior</div>
+              <div className="text-xs text-slate-600">
+                These controls map to the current backend role and reservable inventory state.
+              </div>
+            </div>
+            <label className="space-y-1 text-sm">
+              <span className="text-xs uppercase tracking-wide text-slate-500">Role</span>
+              <Select
+                value={behaviorRole}
+                onChange={(e) => handleBehaviorRoleChange(e.target.value as LocationBehaviorRole)}
+                disabled={mutation.isPending}
+              >
+                {LOCATION_BEHAVIOR_ROLE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+              <span className="block text-xs text-slate-500">
+                {LOCATION_BEHAVIOR_ROLE_OPTIONS.find((option) => option.value === behaviorRole)?.description}
+              </span>
+            </label>
+            <div className="grid gap-2 md:grid-cols-2">
+              {CAPABILITY_LABELS.map((capability) => (
+                <label key={capability.key} className="flex items-start gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={capabilities[capability.key]}
+                    onChange={(e) => setCapability(capability.key, e.target.checked)}
+                    disabled={mutation.isPending}
+                  />
+                  <span>{capability.label}</span>
+                </label>
+              ))}
+            </div>
+            {capabilities.canReserveForSales && behaviorRole === 'raw_material_store' && (
+              <p className="text-xs text-amber-700">
+                Current limitation: production component reservations use the same reservable inventory mechanism as sales reservations.
+              </p>
+            )}
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-3">
           <label className="space-y-1 text-sm">
             <span className="text-xs uppercase tracking-wide text-slate-500">Max Weight</span>

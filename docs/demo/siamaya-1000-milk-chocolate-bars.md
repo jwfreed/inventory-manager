@@ -96,3 +96,4 @@ Completed mode creates/approves the component PO, receives and QC accepts the co
 - API unavailable: start `npm run dev` and confirm `API_BASE_URL` matches the server port.
 - Receipt blocked: confirm the PO is approved and the line UOM matches the PO line.
 - Production blocked: confirm components were QC released and then moved into `FACTORY_RM_STORE`; the current one-step production workflow consumes all BOM components from that named raw-material location, which must remain sellable for work-order component reservations.
+- Location behavior UI: `FACTORY_RM_STORE` should be read as a raw-material store with reservable inventory enabled for production reservations. This is a current backend limitation: production component reservations use the same reservable inventory mechanism as sales reservations until fuller production-location capability modeling exists.

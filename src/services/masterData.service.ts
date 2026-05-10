@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { z } from 'zod';
+import type { PoolClient } from 'pg';
 import { query, withTransaction } from '../db';
 import { getExchangeRate } from './currencies.service';
 import type {
@@ -415,6 +416,24 @@ function isSellableLocationRole(role: string | null | undefined) {
   return role === 'SELLABLE' || role === 'FG_SELLABLE';
 }
 
+async function assertReservableLocationCanBeDisabled(
+  client: Pick<PoolClient, 'query'>,
+  tenantId: string,
+  locationId: string
+) {
+  const openReservations = await client.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND location_id = $2
+        AND status IN ('RESERVED', 'ALLOCATED')`,
+    [tenantId, locationId]
+  );
+  if (Number(openReservations.rows[0]?.count ?? 0) > 0) {
+    throw new Error('LOCATION_RESERVABLE_DISABLE_BLOCKED');
+  }
+}
+
 export async function createLocation(tenantId: string, data: LocationInput) {
   const now = new Date();
   const id = uuidv4();
@@ -515,6 +534,9 @@ export async function updateLocation(tenantId: string, id: string, data: Locatio
     }
     if (!isSellableLocationRole(role) && isSellable) {
       throw new Error('LOCATION_ROLE_SELLABLE_MISMATCH');
+    }
+    if (existing.is_sellable && !isSellable) {
+      await assertReservableLocationCanBeDisabled(client, tenantId, id);
     }
     const res = await client.query(
       `UPDATE locations

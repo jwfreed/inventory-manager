@@ -137,6 +137,21 @@ test('reservations require sellable locations', async () => {
     );
   }
   assert.ok((sellableReservation.payload.data || []).length > 0);
+
+  const disableReservable = await apiRequest('PUT', `/locations/${sellableLocation.id}`, {
+    token,
+    body: {
+      code: sellableLocation.code,
+      name: sellableLocation.name,
+      type: sellableLocation.type,
+      role: 'RM_STORE',
+      isSellable: false,
+      parentLocationId: sellableLocation.parentLocationId ?? warehouse.id,
+      active: true
+    }
+  });
+  assert.equal(disableReservable.res.status, 409, JSON.stringify(disableReservable.payload));
+  assert.equal(disableReservable.payload?.error?.code, 'LOCATION_RESERVABLE_DISABLE_BLOCKED');
 });
 
 test('fulfill reservation fails for non-sellable location', async () => {

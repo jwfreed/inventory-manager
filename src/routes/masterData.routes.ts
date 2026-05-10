@@ -318,6 +318,14 @@ router.put('/locations/:id', async (req: Request, res: Response) => {
     if ((error as Error)?.message === 'LOCATION_ROLE_SELLABLE_MISMATCH') {
       return res.status(400).json({ error: 'Location role must match sellable flag.' });
     }
+    if ((error as Error)?.message === 'LOCATION_RESERVABLE_DISABLE_BLOCKED') {
+      return res.status(409).json({
+        error: {
+          code: 'LOCATION_RESERVABLE_DISABLE_BLOCKED',
+          message: 'Reservable inventory cannot be disabled while this location has open reservations.'
+        }
+      });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Failed to update location.' });
   }

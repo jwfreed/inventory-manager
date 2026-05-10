@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import { renderWithQueryClient } from '../testUtils'
 import LocationDetailPage from '../../features/locations/pages/LocationDetailPage'
@@ -15,12 +15,21 @@ vi.mock('@shared/auth', () => ({
 vi.mock('../../features/locations/queries', () => ({
   useLocation: vi.fn(),
   useLocationInventorySummary: vi.fn(),
+  useLocationsList: vi.fn(),
 }))
 
-import { useLocation, useLocationInventorySummary } from '../../features/locations/queries'
+vi.mock('../../features/locations/api/locations', () => ({
+  updateLocation: vi.fn(),
+  createLocation: vi.fn(),
+}))
+
+import { useLocation, useLocationInventorySummary, useLocationsList } from '../../features/locations/queries'
+import { updateLocation } from '../../features/locations/api/locations'
 
 const mockedUseLocation = vi.mocked(useLocation)
 const mockedUseLocationInventorySummary = vi.mocked(useLocationInventorySummary)
+const mockedUseLocationsList = vi.mocked(useLocationsList)
+const mockedUpdateLocation = vi.mocked(updateLocation)
 
 function renderPage() {
   const router = createMemoryRouter(
@@ -41,13 +50,15 @@ function renderPage() {
 
 const locationData = {
   id: 'loc-1',
-  name: 'Warehouse A',
-  code: 'WH-A',
-  type: 'storage',
+  name: 'Factory Raw Material Store',
+  code: 'FACTORY_RM_STORE',
+  type: 'bin',
+  role: 'SELLABLE',
+  isSellable: true,
   active: true,
-  path: 'WH/WH-A',
+  path: 'MAIN/FACTORY_RM_STORE',
   depth: 1,
-  parentLocationId: null,
+  parentLocationId: 'warehouse-1',
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 }
@@ -69,6 +80,19 @@ beforeEach(() => {
     error: null,
     refetch: vi.fn(),
   } as any)
+  mockedUseLocationsList.mockReturnValue({
+    data: {
+      data: [
+        { id: 'warehouse-1', code: 'MAIN', name: 'Main Warehouse', type: 'warehouse', active: true },
+        locationData,
+      ],
+    },
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  } as any)
+  mockedUpdateLocation.mockResolvedValue(locationData as any)
 })
 
 describe('LocationDetailPage: masterdata:write guard on edit', () => {
@@ -101,5 +125,64 @@ describe('LocationDetailPage: masterdata:write guard on edit', () => {
     fireEvent.click(editButtons[0])
     // After clicking, panel actions button label toggles to "Hide form"
     expect(screen.getByRole('button', { name: 'Hide form' })).toBeInTheDocument()
+  })
+
+  it('displays inventory behavior with domain labels and the production reservation limitation', () => {
+    renderPage()
+
+    expect(screen.getByText('Inventory behavior')).toBeInTheDocument()
+    expect(screen.getAllByText('Raw material store').length).toBeGreaterThan(0)
+    expect(screen.getByText('Reservable inventory enabled')).toBeInTheDocument()
+    expect(screen.getByText('Can consume for production')).toBeInTheDocument()
+    expect(screen.getByText('Can reserve for sales')).toBeInTheDocument()
+    expect(screen.getByText('Current production reservation limitation')).toBeInTheDocument()
+    expect(
+      screen.getByText(/technically marked reservable even though it is not a customer-facing sales location/i),
+    ).toBeInTheDocument()
+  })
+
+  it('shows role selector and capability controls in the edit form', () => {
+    renderPage()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit location' })[0])
+
+    expect(screen.getByLabelText(/Role/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Can receive inventory')).toBeInTheDocument()
+    expect(screen.getByLabelText('Can store raw materials')).toBeInTheDocument()
+    expect(screen.getByLabelText('Can consume for production')).toBeInTheDocument()
+    expect(screen.getByLabelText('Can reserve for sales')).toBeInTheDocument()
+  })
+
+  it('submits the backend role and sellable payload for a reservable raw-material store', async () => {
+    renderPage()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit location' })[0])
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => {
+      expect(mockedUpdateLocation).toHaveBeenCalledWith(
+        'loc-1',
+        expect.objectContaining({
+          code: 'FACTORY_RM_STORE',
+          role: 'SELLABLE',
+          isSellable: true,
+        }),
+      )
+    })
+  })
+
+  it('surfaces backend validation errors when reservable inventory cannot be disabled', async () => {
+    mockedUpdateLocation.mockRejectedValueOnce({
+      status: 409,
+      message: 'Reservable inventory cannot be disabled while this location has open reservations.',
+    })
+    renderPage()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Edit location' })[0])
+    fireEvent.click(screen.getByLabelText('Can reserve for sales'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByText('Save failed')).toBeInTheDocument()
+    expect(screen.getByText(/cannot be disabled while this location has open reservations/i)).toBeInTheDocument()
   })
 })

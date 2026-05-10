@@ -5,6 +5,7 @@ import { useLocation, useLocationInventorySummary } from '../queries'
 import type { ApiError } from '../../../api/types'
 import { formatDate, formatNumber } from '@shared/formatters'
 import { LocationForm } from '../components/LocationForm'
+import { CAPABILITY_LABELS, deriveLocationBehavior } from '../locationBehavior'
 import { ActiveFiltersSummary, Banner, ContextRail, DataTable, EmptyState, EntityPageLayout, ErrorState, PageHeader, Panel, StatusCell, Button, LoadingSpinner } from '@shared/ui'
 
 export default function LocationDetailPage() {
@@ -25,6 +26,8 @@ export default function LocationDetailPage() {
   })
 
   const inventoryQuery = useLocationInventorySummary(id, { retry: 0 })
+  const location = locationQuery.data
+  const inventoryBehavior = location ? deriveLocationBehavior(location) : null
 
   useEffect(() => {
     if (locationQuery.isError && locationQuery.error?.status === 404) {
@@ -46,16 +49,17 @@ export default function LocationDetailPage() {
       {locationQuery.isLoading && <LoadingSpinner label="Loading location..." />}
       {locationQuery.isError && locationQuery.error && <ErrorState error={locationQuery.error} onRetry={() => void locationQuery.refetch()} />}
 
-      {locationQuery.data ? (
+      {location && inventoryBehavior ? (
         <EntityPageLayout
           header={
             <PageHeader
-              title={locationQuery.data.name}
-              subtitle={`Location ${locationQuery.data.code}`}
+              title={location.name}
+              subtitle={`Location ${location.code}`}
               meta={
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusCell label={locationQuery.data.active ? 'Ready' : 'Blocked'} tone={locationQuery.data.active ? 'success' : 'danger'} compact />
-                  <StatusCell label={locationQuery.data.type} tone="neutral" compact />
+                  <StatusCell label={location.active ? 'Ready' : 'Blocked'} tone={location.active ? 'success' : 'danger'} compact />
+                  <StatusCell label={location.type} tone="neutral" compact />
+                  <StatusCell label={inventoryBehavior.roleLabel} tone="info" compact />
                 </div>
               }
               action={
@@ -87,6 +91,8 @@ export default function LocationDetailPage() {
                     { label: 'Code', value: locationQuery.data.code },
                     { label: 'Type', value: locationQuery.data.type },
                     { label: 'Active', value: locationQuery.data.active ? 'Ready' : 'Blocked' },
+                    { label: 'Inventory role', value: inventoryBehavior.roleLabel },
+                    { label: 'Reservable inventory', value: inventoryBehavior.isTechnicallySellable ? 'Enabled' : 'Disabled' },
                   ],
                 },
                 {
@@ -114,6 +120,55 @@ export default function LocationDetailPage() {
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Hierarchy</div>
                 <div className="mt-2 text-base font-semibold text-slate-950">Depth {locationQuery.data.depth ?? '—'}</div>
               </div>
+            </div>
+          </Panel>
+
+          <Panel
+            title="Inventory behavior"
+            description="Operational capabilities derived from this location's role and reservable inventory state."
+          >
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{inventoryBehavior.roleLabel}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Technical state</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{inventoryBehavior.technicalStateLabel}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Backend role</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-950">{inventoryBehavior.persistedRoleLabel}</div>
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {CAPABILITY_LABELS.map((capability) => {
+                  const enabled = inventoryBehavior.capabilities[capability.key]
+                  return (
+                    <div
+                      key={capability.key}
+                      className={`rounded-lg border px-3 py-2 text-sm ${
+                        enabled
+                          ? 'border-green-200 bg-green-50 text-green-800'
+                          : 'border-slate-200 bg-white text-slate-500'
+                      }`}
+                    >
+                      {enabled ? capability.label : capability.label.replace(/^Can /, 'Cannot ')}
+                    </div>
+                  )
+                })}
+              </div>
+              {inventoryBehavior.hasProductionReservationLimitation && (
+                <Banner
+                  severity="watch"
+                  title="Current production reservation limitation"
+                  description="Current limitation: production component reservations use the same reservable inventory mechanism as sales reservations. This raw-material store is therefore technically marked reservable even though it is not a customer-facing sales location."
+                />
+              )}
+              {!inventoryBehavior.hasProductionReservationLimitation && (
+                <p className="text-xs text-slate-600">{inventoryBehavior.technicalStateDescription}</p>
+              )}
             </div>
           </Panel>
 
