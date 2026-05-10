@@ -14,7 +14,7 @@ import { assertNonProductionEnvironment } from './lib/productionGuard'
  */
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error'
-type SeedMode = 'completed' | 'manual'
+export type SeedMode = 'completed' | 'manual'
 
 type SeedConfig = {
   mode: SeedMode
@@ -27,9 +27,6 @@ type SeedConfig = {
   logLevel: LogLevel
   timeoutMs: number
   reset: boolean
-  seedOpeningBalances: boolean
-  openingBalanceMassG: number
-  openingBalanceCount: number
   allowLocalAuthRepair: boolean
 }
 
@@ -129,103 +126,140 @@ type Shipment = {
   lines: Array<{ salesOrderLineId: string; uom: string; quantityShipped: string | number }>
 }
 
-const DEMO = {
-  itemSku: 'SIAMAYA-MILK-CHOCOLATE-BAR',
-  itemName: 'Milk Chocolate Bar',
-  vendorCode: 'SIAMAYA-DEMO-CHOCOLATE-SUPPLIER',
-  vendorName: 'Demo Chocolate Supplier',
-  customerCode: 'SIAMAYA-DEMO-CUSTOMER',
-  customerName: 'Demo Customer',
-  poNumber: 'PO-COMPLETED-1000-MILK-CHOCOLATE',
-  soNumber: 'SO-COMPLETED-1000-MILK-CHOCOLATE',
-  shipmentExternalRef: 'SHIP-COMPLETED-1000-MILK-CHOCOLATE',
-  quantity: 1000,
-  uom: 'each',
+export const DEMO_FLOW_QUANTITY = 1000
+
+export const DEMO_FINISHED_GOOD = {
+  sku: 'SIAMAYA-MILK-CHOCOLATE-BAR-75G',
+  name: 'Milk Chocolate Bar 75g',
+  type: 'finished' as const,
+  defaultUom: 'each',
+  uomDimension: 'count' as const,
+  canonicalUom: 'each',
+  stockingUom: 'each',
+  weight: 75,
+  weightUom: 'g',
+  isPurchasable: false,
+  isManufactured: true,
+}
+
+export const DEMO_BOM_CODE = 'SIAMAYA-BOM-MILK-CHOCOLATE-BAR-75G'
+
+export const DEMO_BOM_COMPONENTS = [
+  {
+    key: 'cacaoNibs',
+    sku: 'SIAMAYA-MILK-CHOC-CACAO-NIBS',
+    name: 'Cacao nibs',
+    type: 'raw' as const,
+    uom: 'g',
+    dimension: 'mass' as const,
+    quantityPer: 30,
+    unitCost: 0.04,
+  },
+  {
+    key: 'sugar',
+    sku: 'SIAMAYA-MILK-CHOC-SUGAR',
+    name: 'Sugar',
+    type: 'raw' as const,
+    uom: 'g',
+    dimension: 'mass' as const,
+    quantityPer: 20,
+    unitCost: 0.015,
+  },
+  {
+    key: 'milkPowder',
+    sku: 'SIAMAYA-MILK-CHOC-MILK-POWDER',
+    name: 'Milk powder',
+    type: 'raw' as const,
+    uom: 'g',
+    dimension: 'mass' as const,
+    quantityPer: 15,
+    unitCost: 0.03,
+  },
+  {
+    key: 'cacaoButter',
+    sku: 'SIAMAYA-MILK-CHOC-CACAO-BUTTER',
+    name: 'Cacao butter',
+    type: 'raw' as const,
+    uom: 'g',
+    dimension: 'mass' as const,
+    quantityPer: 9.5,
+    unitCost: 0.05,
+  },
+  {
+    key: 'lecithin',
+    sku: 'SIAMAYA-MILK-CHOC-LECITHIN',
+    name: 'Lecithin',
+    type: 'raw' as const,
+    uom: 'g',
+    dimension: 'mass' as const,
+    quantityPer: 0.5,
+    unitCost: 0.08,
+  },
+  {
+    key: 'foilWrapper',
+    sku: 'SIAMAYA-MILK-CHOC-FOIL-WRAPPER',
+    name: 'Foil wrapper',
+    type: 'packaging' as const,
+    uom: 'each',
+    dimension: 'count' as const,
+    quantityPer: 1,
+    unitCost: 0.2,
+  },
+]
+
+export const DEMO_SUPPLIER = {
+  code: 'SIAMAYA-DEMO-INGREDIENT-SUPPLIER',
+  name: 'Siamaya Demo Ingredient Supplier',
+}
+
+export const DEMO_CUSTOMER = {
+  code: 'SIAMAYA-DEMO-CUSTOMER',
+  name: 'Siamaya Demo Customer',
+}
+
+export const DEMO_PO = {
+  number: 'PO-MILK-CHOC-1000-INGREDIENTS',
+  vendorReference: 'SIAMAYA-DEMO-INGREDIENTS-1000',
+}
+
+export const DEMO_SO = {
+  number: 'SO-MILK-CHOC-1000-BARS',
+  customerReference: 'SIAMAYA-DEMO-CUSTOMER-1000-BARS',
+}
+
+export const DEMO_DATES = {
   orderDate: '2026-01-15',
   expectedDate: '2026-01-16',
   receiptAt: '2026-01-16T09:00:00.000Z',
   qcAt: '2026-01-16T10:00:00.000Z',
+  productionAt: '2026-01-16T13:00:00.000Z',
   requestedShipDate: '2026-01-17',
   shippedAt: '2026-01-17T15:00:00.000Z',
 }
 
+export const DEMO_FLOW_IDS = {
+  shipmentExternalRef: 'SHIP-MILK-CHOC-1000-BARS',
+  workOrderDescription: 'seed:siamaya:milk-chocolate-1000:work-order:v1',
+}
+
 const MANUAL_DEMO = {
-  bomCode: 'SIAMAYA-BOM-MILK-CHOCOLATE-BAR',
   rawMaterialLocationCodes: {
     receiving: 'FACTORY_RECEIVING',
     rawStore: 'FACTORY_RM_STORE',
     packStore: 'FACTORY_PACK_STORE',
     production: 'FACTORY_PRODUCTION',
     fgStage: 'FACTORY_FG_STAGE',
+    shipping: 'FACTORY_SHIPPING',
   },
-  components: [
-    {
-      key: 'cacaoNibs',
-      sku: 'SIAMAYA-MILK-CHOC-CACAO-NIBS',
-      name: 'Milk Chocolate Cacao Nibs',
-      type: 'raw' as const,
-      uom: 'g',
-      dimension: 'mass' as const,
-      quantityPer: 30,
-      topUpQuantity: 33000,
-      store: 'rawStore' as const,
-    },
-    {
-      key: 'sugar',
-      sku: 'SIAMAYA-MILK-CHOC-SUGAR',
-      name: 'Milk Chocolate Sugar',
-      type: 'raw' as const,
-      uom: 'g',
-      dimension: 'mass' as const,
-      quantityPer: 20,
-      topUpQuantity: 22000,
-      store: 'rawStore' as const,
-    },
-    {
-      key: 'milkPowder',
-      sku: 'SIAMAYA-MILK-CHOC-MILK-POWDER',
-      name: 'Milk Chocolate Milk Powder',
-      type: 'raw' as const,
-      uom: 'g',
-      dimension: 'mass' as const,
-      quantityPer: 15,
-      topUpQuantity: 16500,
-      store: 'rawStore' as const,
-    },
-    {
-      key: 'cacaoButter',
-      sku: 'SIAMAYA-MILK-CHOC-CACAO-BUTTER',
-      name: 'Milk Chocolate Cacao Butter',
-      type: 'raw' as const,
-      uom: 'g',
-      dimension: 'mass' as const,
-      quantityPer: 10,
-      topUpQuantity: 11000,
-      store: 'rawStore' as const,
-    },
-    {
-      key: 'lecithin',
-      sku: 'SIAMAYA-MILK-CHOC-LECITHIN',
-      name: 'Milk Chocolate Lecithin',
-      type: 'raw' as const,
-      uom: 'g',
-      dimension: 'mass' as const,
-      quantityPer: 0.5,
-      topUpQuantity: 600,
-      store: 'rawStore' as const,
-    },
-    {
-      key: 'foilWrap',
-      sku: 'SIAMAYA-MILK-CHOC-FOIL-WRAP',
-      name: 'Milk Chocolate Foil Wrapper',
-      type: 'packaging' as const,
-      uom: 'each',
-      dimension: 'count' as const,
-      quantityPer: 1,
-      topUpQuantity: 1100,
-      store: 'packStore' as const,
-    },
-  ],
+}
+
+export const DEMO_SKUS = [
+  DEMO_FINISHED_GOOD.sku,
+  ...DEMO_BOM_COMPONENTS.map((component) => component.sku),
+]
+
+function componentRequirement(quantityPer: number) {
+  return quantityPer * DEMO_FLOW_QUANTITY
 }
 
 function requiredEnv(name: string): string {
@@ -253,9 +287,6 @@ function loadConfig(): SeedConfig {
   const logLevel = (process.env.LOG_LEVEL as LogLevel) || 'info'
   const timeoutMs = Number(process.env.TIMEOUT_MS || '15000')
   const reset = parseBool(process.env.CONFIRM_CANONICAL_RESET)
-  const seedOpeningBalances = parseBool(process.env.SEED_OPENING_BALANCE)
-  const openingBalanceMassG = Number(process.env.OPENING_BALANCE_MASS_G || '0')
-  const openingBalanceCount = Number(process.env.OPENING_BALANCE_COUNT || '0')
   const allowLocalAuthRepair = parseBool(process.env.ALLOW_LOCAL_AUTH_REPAIR)
   return {
     mode: rawMode,
@@ -268,9 +299,6 @@ function loadConfig(): SeedConfig {
     logLevel,
     timeoutMs,
     reset,
-    seedOpeningBalances,
-    openingBalanceMassG,
-    openingBalanceCount,
     allowLocalAuthRepair,
   }
 }
@@ -421,6 +449,7 @@ async function resetOperationalData(config: SeedConfig, log: ReturnType<typeof m
   const databaseUrl = requiredEnv('DATABASE_URL')
   const client = new Client({ connectionString: databaseUrl })
   const tables = [
+    'idempotency_keys',
     'inventory_movement_lpns',
     'inventory_movement_lots',
     'inventory_movement_lines',
@@ -495,15 +524,15 @@ async function ensureLocalTenantAdminPrincipal(config: SeedConfig, log: ReturnTy
       const tenantId = tenantRes.rows[0]?.id ?? uuidv4()
       if (!tenantRes.rows[0]) {
         await client.query(
-          `INSERT INTO tenants (id, name, slug, parent_tenant_id, logo_url, created_at)
-           VALUES ($1, $2, $3, NULL, $4, now())`,
-          [tenantId, config.tenantName, config.tenantSlug, `/tenants/${config.tenantSlug}/logo.png`],
+          `INSERT INTO tenants (id, name, slug, parent_tenant_id, created_at)
+           VALUES ($1, $2, $3, NULL, now())`,
+          [tenantId, config.tenantName, config.tenantSlug],
         )
         log.info(`Tenant created: ${config.tenantSlug} (${tenantId})`)
       } else {
         await client.query(
-          `UPDATE tenants SET logo_url = COALESCE(logo_url, $1) WHERE id = $2`,
-          [`/tenants/${config.tenantSlug}/logo.png`, tenantId],
+          `UPDATE tenants SET name = $1 WHERE id = $2`,
+          [config.tenantName, tenantId],
         )
       }
 
@@ -676,6 +705,31 @@ async function ensureLocation(
 ): Promise<Location> {
   const existing = await findLocationByCode(config, token, code)
   if (existing) {
+    const expectedParentLocationId = type === 'warehouse' ? null : (opts.parentLocationId ?? null)
+    const expectedRole = opts.role ?? null
+    const expectedSellable = opts.isSellable ?? false
+    if (
+      existing.name !== name ||
+      existing.type !== type ||
+      (existing.role ?? null) !== expectedRole ||
+      Boolean(existing.isSellable) !== expectedSellable ||
+      (existing.parentLocationId ?? null) !== expectedParentLocationId
+    ) {
+      const updated = await apiRequest<Location>(config, 'PUT', `/locations/${existing.id}`, {
+        token,
+        body: {
+          code,
+          name,
+          type,
+          active: true,
+          role: opts.role ?? undefined,
+          isSellable: opts.isSellable,
+          parentLocationId: expectedParentLocationId,
+        },
+      })
+      log.info(`Location updated: ${code} (${updated.id})`)
+      return updated
+    }
     log.info(`Location exists: ${code} (${existing.id})`)
     return existing
   }
@@ -769,6 +823,7 @@ async function ensureBom(
     const inactive = found.versions.find((v) => v.status !== 'active')
     if (inactive) {
       await activateBomVersion(config, token, log, inactive.id)
+      inactive.status = 'active'
     }
     return found
   }
@@ -783,35 +838,6 @@ async function ensureBom(
     await activateBomVersion(config, token, log, firstVersion.id)
   }
   return created as Bom
-}
-
-async function createOpeningBalance(
-  config: SeedConfig,
-  token: string,
-  item: Item,
-  locationId: string,
-  uom: string,
-  quantity: number,
-) {
-  const now = new Date().toISOString()
-  const adjustment = await apiRequest<{ id: string }>(config, 'POST', '/inventory-adjustments', {
-    token,
-    body: {
-      occurredAt: now,
-      notes: `opening_balance:${now}`,
-      lines: [
-        {
-          itemId: item.id,
-          locationId,
-          uom,
-          quantityDelta: quantity,
-          reasonCode: 'opening_balance',
-          notes: `opening_balance:${now}`,
-        },
-      ],
-    },
-  })
-  await apiRequest(config, 'POST', `/inventory-adjustments/${adjustment.id}/post`, { token, body: {} })
 }
 
 async function withDbClient<T>(handler: (client: Client) => Promise<T>): Promise<T> {
@@ -908,7 +934,7 @@ async function ensureOperationalLocations(
     MANUAL_DEMO.rawMaterialLocationCodes.rawStore,
     'Factory Raw Material Store',
     'bin',
-    { role: 'RM_STORE', parentLocationId: warehouse.id, isSellable: false },
+    { role: 'SELLABLE', parentLocationId: warehouse.id, isSellable: true },
   )
   const packStore = await ensureLocation(
     config,
@@ -937,8 +963,17 @@ async function ensureOperationalLocations(
     'bin',
     { role: 'FG_SELLABLE', parentLocationId: warehouse.id, isSellable: true },
   )
+  const shipping = await ensureLocation(
+    config,
+    token,
+    log,
+    MANUAL_DEMO.rawMaterialLocationCodes.shipping,
+    'Factory Shipping',
+    'bin',
+    { role: 'FG_SELLABLE', parentLocationId: warehouse.id, isSellable: true },
+  )
 
-  return { receiving, rawStore, packStore, production, fgStage }
+  return { receiving, rawStore, packStore, production, fgStage, shipping }
 }
 
 async function ensureVendor(
@@ -951,23 +986,23 @@ async function ensureVendor(
     params: { active: true },
   })
   const rows = Array.isArray(list) ? list : list.data ?? []
-  const existing = rows.find((row) => row.code === DEMO.vendorCode)
+  const existing = rows.find((row) => row.code === DEMO_SUPPLIER.code)
   if (existing) {
-    log.info(`Vendor exists: ${DEMO.vendorCode} (${existing.id})`)
+    log.info(`Vendor exists: ${DEMO_SUPPLIER.code} (${existing.id})`)
     return existing
   }
 
   const created = await apiRequest<Vendor>(config, 'POST', '/vendors', {
     token,
     body: {
-      code: DEMO.vendorCode,
-      name: DEMO.vendorName,
+      code: DEMO_SUPPLIER.code,
+      name: DEMO_SUPPLIER.name,
       email: 'supplier@example.test',
-      contactName: 'Demo Supplier Contact',
+      contactName: 'Siamaya Demo Supplier Contact',
       notes: 'Seeded supplier for 1,000 milk chocolate bar demo.',
     },
   })
-  log.info(`Vendor created: ${DEMO.vendorCode} (${created.id})`)
+  log.info(`Vendor created: ${DEMO_SUPPLIER.code} (${created.id})`)
   return created
 }
 
@@ -979,10 +1014,10 @@ async function ensureCustomer(tenantId: string, log: ReturnType<typeof makeLogge
         WHERE code = $1
           AND tenant_id = $2
         LIMIT 1`,
-      [DEMO.customerCode, tenantId],
+      [DEMO_CUSTOMER.code, tenantId],
     )
     if (existing.rows[0]) {
-      log.info(`Customer exists: ${DEMO.customerCode} (${existing.rows[0].id})`)
+      log.info(`Customer exists: ${DEMO_CUSTOMER.code} (${existing.rows[0].id})`)
       return existing.rows[0]
     }
 
@@ -992,10 +1027,10 @@ async function ensureCustomer(tenantId: string, log: ReturnType<typeof makeLogge
         WHERE code = $1
           AND tenant_id <> $2
         LIMIT 1`,
-      [DEMO.customerCode, tenantId],
+      [DEMO_CUSTOMER.code, tenantId],
     )
     if (conflicting.rows[0]) {
-      throw new Error(`Customer code ${DEMO.customerCode} already exists for a different tenant`)
+      throw new Error(`Customer code ${DEMO_CUSTOMER.code} already exists for a different tenant`)
     }
 
     const id = uuidv4()
@@ -1003,9 +1038,9 @@ async function ensureCustomer(tenantId: string, log: ReturnType<typeof makeLogge
       `INSERT INTO customers (id, tenant_id, code, name, email, phone, active, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, true, now(), now())
        RETURNING id, code, name`,
-      [id, tenantId, DEMO.customerCode, DEMO.customerName, 'customer@example.test', '+1-555-0100'],
+      [id, tenantId, DEMO_CUSTOMER.code, DEMO_CUSTOMER.name, 'customer@example.test', '+1-555-0100'],
     )
-    log.info(`Customer created: ${DEMO.customerCode} (${id})`)
+    log.info(`Customer created: ${DEMO_CUSTOMER.code} (${id})`)
     return created.rows[0]
   })
 }
@@ -1029,41 +1064,39 @@ async function ensureDemoPurchaseOrder(
   token: string,
   log: ReturnType<typeof makeLogger>,
   vendor: Vendor,
-  item: Item,
+  componentItems: Array<{ spec: (typeof DEMO_BOM_COMPONENTS)[number]; item: Item }>,
   warehouse: Location,
 ): Promise<PurchaseOrder> {
-  const existing = await findPurchaseOrderByNumber(config, token, DEMO.poNumber)
+  const existing = await findPurchaseOrderByNumber(config, token, DEMO_PO.number)
   if (existing) {
-    log.info(`Purchase order exists: ${DEMO.poNumber} (${existing.id})`)
+    log.info(`Purchase order exists: ${DEMO_PO.number} (${existing.id})`)
     return existing
   }
 
   const created = await apiRequest<PurchaseOrder>(config, 'POST', '/purchase-orders', {
     token,
     body: {
-      poNumber: DEMO.poNumber,
+      poNumber: DEMO_PO.number,
       vendorId: vendor.id,
-      status: 'submitted',
-      orderDate: DEMO.orderDate,
-      expectedDate: DEMO.expectedDate,
+      status: 'approved',
+      orderDate: DEMO_DATES.orderDate,
+      expectedDate: DEMO_DATES.expectedDate,
       shipToLocationId: warehouse.id,
       receivingLocationId: warehouse.id,
-      vendorReference: 'DEMO-PO-1000-BARS',
-      notes: 'Demo purchase order for exactly 1,000 milk chocolate bars.',
-      lines: [
-        {
-          lineNumber: 1,
-          itemId: item.id,
-          uom: DEMO.uom,
-          quantityOrdered: DEMO.quantity,
-          unitCost: 1.5,
-          currencyCode: 'THB',
-          notes: 'Demo inbound finished goods.',
-        },
-      ],
+      vendorReference: DEMO_PO.vendorReference,
+      notes: 'Demo purchase order for exactly the components required to make 1,000 Milk Chocolate Bar 75g units.',
+      lines: componentItems.map(({ spec, item }, index) => ({
+        lineNumber: index + 1,
+        itemId: item.id,
+        uom: spec.uom,
+        quantityOrdered: componentRequirement(spec.quantityPer),
+        unitCost: spec.unitCost,
+        currencyCode: 'THB',
+        notes: `Required for ${DEMO_FLOW_QUANTITY} bars at ${spec.quantityPer} ${spec.uom} per bar.`,
+      })),
     },
   })
-  log.info(`Purchase order created: ${DEMO.poNumber} (${created.id})`)
+  log.info(`Purchase order created: ${DEMO_PO.number} (${created.id})`)
   return created
 }
 
@@ -1072,30 +1105,30 @@ async function ensureDemoReceipt(
   token: string,
   log: ReturnType<typeof makeLogger>,
   po: PurchaseOrder,
+  componentItems: Array<{ spec: (typeof DEMO_BOM_COMPONENTS)[number]; item: Item }>,
 ): Promise<Receipt> {
   const poLine = po.lines[0]
   if (!poLine) throw new Error('Demo purchase order has no lines')
   const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:receipt:v1'
+  const unitCostByItemId = new Map(componentItems.map(({ spec, item }) => [item.id, spec.unitCost]))
   const receipt = await apiRequest<Receipt>(config, 'POST', '/purchase-order-receipts', {
     token,
     idempotencyKey,
     body: {
       purchaseOrderId: po.id,
-      receivedAt: DEMO.receiptAt,
-      externalRef: 'RCPT-DEMO-1000-MILK-CHOCOLATE',
-      notes: 'Demo receipt for exactly 1,000 milk chocolate bars.',
+      receivedAt: DEMO_DATES.receiptAt,
+      externalRef: 'RCPT-MILK-CHOC-1000-INGREDIENTS',
+      notes: 'Demo receipt for the ingredients and packaging required for exactly 1,000 milk chocolate bars.',
       idempotencyKey,
-      lines: [
-        {
-          purchaseOrderLineId: poLine.id,
-          uom: DEMO.uom,
-          quantityReceived: DEMO.quantity,
-          unitCost: 1.5,
-        },
-      ],
+      lines: po.lines.map((line) => ({
+        purchaseOrderLineId: line.id,
+        uom: line.uom,
+        quantityReceived: Number(line.quantityOrdered),
+        unitCost: unitCostByItemId.get(line.itemId) ?? 0,
+      })),
     },
   })
-  log.info(`Receipt ready for ${DEMO.poNumber} (${receipt.id})`)
+  log.info(`Receipt ready for ${DEMO_PO.number} (${receipt.id})`)
   return receipt
 }
 
@@ -1105,29 +1138,30 @@ async function ensureDemoQcAccepted(
   log: ReturnType<typeof makeLogger>,
   receipt: Receipt,
 ) {
-  const receiptLine = receipt.lines[0]
-  if (!receiptLine) throw new Error('Demo receipt has no lines')
-  const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:qc-accept:v1'
-  const result = await apiRequest<{ id: string } | { eventId: string; replayed?: boolean }>(
-    config,
-    'POST',
-    '/qc-events',
-    {
-      token,
-      idempotencyKey,
-      body: {
-        purchaseOrderReceiptLineId: receiptLine.id,
-        eventType: 'accept',
-        quantity: DEMO.quantity,
-        uom: DEMO.uom,
-        reasonCode: 'demo_accept',
-        notes: 'Demo QC accept for exactly 1,000 milk chocolate bars.',
-        actorType: 'system',
-        actorId: 'chocolate-seed',
+  if (receipt.lines.length === 0) throw new Error('Demo receipt has no lines')
+  for (const [index, receiptLine] of receipt.lines.entries()) {
+    const idempotencyKey = `seed:siamaya:milk-chocolate-1000:qc-accept:${index + 1}:v1`
+    const result = await apiRequest<{ id: string } | { eventId: string; replayed?: boolean }>(
+      config,
+      'POST',
+      '/qc-events',
+      {
+        token,
+        idempotencyKey,
+        body: {
+          purchaseOrderReceiptLineId: receiptLine.id,
+          eventType: 'accept',
+          quantity: Number(receiptLine.quantityReceived),
+          uom: receiptLine.uom,
+          reasonCode: 'demo_accept',
+          notes: 'Demo QC accept for milk chocolate ingredient receipt.',
+          actorType: 'system',
+          actorId: 'chocolate-seed',
+        },
       },
-    },
-  )
-  log.info(`QC accept ready (${(result as any).eventId ?? (result as any).id})`)
+    )
+    log.info(`QC accept ready (${(result as any).eventId ?? (result as any).id})`)
+  }
 }
 
 async function findSalesOrderByNumber(
@@ -1158,30 +1192,30 @@ async function ensureDemoSalesOrder(
   warehouse: Location,
   sellable: Location,
 ): Promise<SalesOrder> {
-  const existing = await findSalesOrderByNumber(config, token, DEMO.soNumber)
+  const existing = await findSalesOrderByNumber(config, token, DEMO_SO.number)
   if (existing) {
-    log.info(`Sales order exists: ${DEMO.soNumber} (${existing.id})`)
+    log.info(`Sales order exists: ${DEMO_SO.number} (${existing.id})`)
     return existing
   }
 
   const created = await apiRequest<SalesOrder>(config, 'POST', '/sales-orders', {
     token,
     body: {
-      soNumber: DEMO.soNumber,
+      soNumber: DEMO_SO.number,
       customerId: customer.id,
       warehouseId: warehouse.id,
       status: 'submitted',
-      orderDate: DEMO.orderDate,
-      requestedShipDate: DEMO.requestedShipDate,
+      orderDate: DEMO_DATES.orderDate,
+      requestedShipDate: DEMO_DATES.requestedShipDate,
       shipFromLocationId: sellable.id,
-      customerReference: 'DEMO-CUSTOMER-PO-1000-BARS',
+      customerReference: DEMO_SO.customerReference,
       notes: 'Demo sales order for exactly 1,000 milk chocolate bars.',
       lines: [
         {
           lineNumber: 1,
           itemId: item.id,
-          uom: DEMO.uom,
-          quantityOrdered: DEMO.quantity,
+          uom: DEMO_FINISHED_GOOD.defaultUom,
+          quantityOrdered: DEMO_FLOW_QUANTITY,
           unitPrice: 3.5,
           currencyCode: 'THB',
           notes: 'Demo outbound finished goods.',
@@ -1189,7 +1223,7 @@ async function ensureDemoSalesOrder(
       ],
     },
   })
-  log.info(`Sales order created: ${DEMO.soNumber} (${created.id})`)
+  log.info(`Sales order created: ${DEMO_SO.number} (${created.id})`)
   return created
 }
 
@@ -1216,8 +1250,8 @@ async function ensureDemoReservation(
           itemId: item.id,
           locationId: sellable.id,
           warehouseId: warehouse.id,
-          uom: DEMO.uom,
-          quantityReserved: DEMO.quantity,
+          uom: DEMO_FINISHED_GOOD.defaultUom,
+          quantityReserved: DEMO_FLOW_QUANTITY,
           allowBackorder: false,
           notes: 'Demo reservation for exactly 1,000 milk chocolate bars.',
         },
@@ -1253,9 +1287,9 @@ async function ensureDemoShipment(
   so: SalesOrder,
   sellable: Location,
 ): Promise<Shipment> {
-  const existing = await findShipmentByExternalRef(config, token, DEMO.shipmentExternalRef)
+  const existing = await findShipmentByExternalRef(config, token, DEMO_FLOW_IDS.shipmentExternalRef)
   if (existing) {
-    log.info(`Shipment exists: ${DEMO.shipmentExternalRef} (${existing.id}, status=${existing.status})`)
+    log.info(`Shipment exists: ${DEMO_FLOW_IDS.shipmentExternalRef} (${existing.id}, status=${existing.status})`)
     return existing
   }
   const soLine = so.lines[0]
@@ -1265,21 +1299,21 @@ async function ensureDemoShipment(
     token,
     body: {
       salesOrderId: so.id,
-      shippedAt: DEMO.shippedAt,
+      shippedAt: DEMO_DATES.shippedAt,
       shipFromLocationId: sellable.id,
-      externalRef: DEMO.shipmentExternalRef,
+      externalRef: DEMO_FLOW_IDS.shipmentExternalRef,
       autoAllocateReservations: true,
       notes: 'Demo shipment for exactly 1,000 milk chocolate bars.',
       lines: [
         {
           salesOrderLineId: soLine.id,
-          uom: DEMO.uom,
-          quantityShipped: DEMO.quantity,
+          uom: DEMO_FINISHED_GOOD.defaultUom,
+          quantityShipped: DEMO_FLOW_QUANTITY,
         },
       ],
     },
   })
-  log.info(`Shipment created: ${DEMO.shipmentExternalRef} (${created.id})`)
+  log.info(`Shipment created: ${DEMO_FLOW_IDS.shipmentExternalRef} (${created.id})`)
   return created
 }
 
@@ -1290,7 +1324,7 @@ async function ensureDemoShipmentPosted(
   shipment: Shipment,
 ): Promise<Shipment> {
   if (shipment.status === 'posted' && shipment.inventoryMovementId) {
-    log.info(`Shipment already posted: ${DEMO.shipmentExternalRef} (${shipment.inventoryMovementId})`)
+    log.info(`Shipment already posted: ${DEMO_FLOW_IDS.shipmentExternalRef} (${shipment.inventoryMovementId})`)
     return shipment
   }
   const posted = await apiRequest<Shipment>(config, 'POST', `/shipments/${shipment.id}/post`, {
@@ -1298,7 +1332,7 @@ async function ensureDemoShipmentPosted(
     idempotencyKey: 'seed:siamaya:milk-chocolate-1000:shipment-post:v1',
     body: {},
   })
-  log.info(`Shipment posted: ${DEMO.shipmentExternalRef} (${posted.inventoryMovementId})`)
+  log.info(`Shipment posted: ${DEMO_FLOW_IDS.shipmentExternalRef} (${posted.inventoryMovementId})`)
   return posted
 }
 
@@ -1312,64 +1346,109 @@ async function markDemoSalesOrderShipped(tenantId: string, shipment: Shipment) {
         WHERE tenant_id = $1
           AND so_number = $2
           AND status <> 'shipped'`,
-      [tenantId, DEMO.soNumber],
+      [tenantId, DEMO_SO.number],
     )
   })
 }
 
-async function getInventoryOnHand(
-  tenantId: string,
-  itemId: string,
-  locationId: string,
-  uom: string,
-): Promise<number> {
+async function findDemoWorkOrder(tenantId: string) {
   return withDbClient(async (client) => {
-    const res = await client.query<{ on_hand: string | null }>(
-      `SELECT COALESCE(SUM(on_hand), 0)::text AS on_hand
-         FROM inventory_balance
+    const result = await client.query<{ id: string; status: string }>(
+      `SELECT id, status
+         FROM work_orders
         WHERE tenant_id = $1
-          AND item_id = $2
-          AND location_id = $3
-          AND uom = $4`,
-      [tenantId, itemId, locationId, uom],
+          AND description = $2
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [tenantId, DEMO_FLOW_IDS.workOrderDescription],
     )
-    return Number(res.rows[0]?.on_hand ?? 0)
+    return result.rows[0] ?? null
   })
 }
 
-async function topUpInventory(
+async function ensureDemoWorkOrder(
   config: SeedConfig,
   token: string,
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
-  entry: { item: Item; location: Location; uom: string; targetOnHand: number; reasonCode: string },
+  finishedItem: Item,
+  bom: Bom,
+  consumeLocation: Location,
+  produceLocation: Location,
 ) {
-  const current = await getInventoryOnHand(tenantId, entry.item.id, entry.location.id, entry.uom)
-  const delta = entry.targetOnHand - current
-  if (delta <= 0) {
-    log.info(`Inventory sufficient: ${entry.item.sku} at ${entry.location.code} (${current} ${entry.uom})`)
-    return
+  const existing = await findDemoWorkOrder(tenantId)
+  if (existing) {
+    log.info(`Work order exists: ${existing.id} (${existing.status})`)
+    return existing
   }
-  const now = new Date().toISOString()
-  const adjustment = await apiRequest<{ id: string }>(config, 'POST', '/inventory-adjustments', {
+  const activeVersion = bom.versions.find((version) => version.status === 'active') ?? bom.versions[0]
+  const created = await apiRequest<{ id: string; status: string }>(config, 'POST', '/work-orders', {
     token,
     body: {
-      occurredAt: now,
-      notes: `${entry.reasonCode}:manual_seed_top_up:${entry.item.sku}:${entry.location.code}`,
-      lines: [
-        {
-          itemId: entry.item.id,
-          locationId: entry.location.id,
-          uom: entry.uom,
-          quantityDelta: delta,
-          reasonCode: entry.reasonCode,
-          notes: `${entry.reasonCode}: top up to ${entry.targetOnHand} ${entry.uom} for Siamaya manual demo.`,
-        },
-      ],
+      kind: 'production',
+      bomId: bom.id,
+      bomVersionId: activeVersion?.id,
+      outputItemId: finishedItem.id,
+      outputUom: DEMO_FINISHED_GOOD.defaultUom,
+      quantityPlanned: DEMO_FLOW_QUANTITY,
+      defaultConsumeLocationId: consumeLocation.id,
+      defaultProduceLocationId: produceLocation.id,
+      scheduledStartAt: DEMO_DATES.receiptAt,
+      scheduledDueAt: DEMO_DATES.requestedShipDate,
+      description: DEMO_FLOW_IDS.workOrderDescription,
     },
   })
-  await apiRequest(config, 'POST', `/inventory-adjustments/${adjustment.id}/post`, { token, body: {} })
-  log.info(`Inventory topped up: ${entry.item.sku} +${delta} ${entry.uom} at ${entry.location.code}`)
+  log.info(`Work order created: ${created.id} (${created.status})`)
+  return created
+}
+
+async function hasDemoProductionReport(tenantId: string, workOrderId: string) {
+  return withDbClient(async (client) => {
+    const result = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+         FROM work_order_executions
+        WHERE tenant_id = $1
+          AND work_order_id = $2
+          AND idempotency_key = $3
+          AND status = 'posted'`,
+      [tenantId, workOrderId, 'seed:siamaya:milk-chocolate-1000:report-production:v1'],
+    )
+    return Number(result.rows[0]?.count ?? 0) > 0
+  })
+}
+
+async function ensureDemoProductionReported(
+  config: SeedConfig,
+  token: string,
+  tenantId: string,
+  log: ReturnType<typeof makeLogger>,
+  workOrderId: string,
+) {
+  if (await hasDemoProductionReport(tenantId, workOrderId)) {
+    log.info(`Production report exists for work order: ${workOrderId}`)
+    return
+  }
+  const idempotencyKey = 'seed:siamaya:milk-chocolate-1000:report-production:v1'
+  const result = await apiRequest<{ productionReportId: string; replayed?: boolean }>(
+    config,
+    'POST',
+    `/work-orders/${workOrderId}/report-production`,
+    {
+      token,
+      idempotencyKey,
+      body: {
+        warehouseId: undefined,
+        outputQty: DEMO_FLOW_QUANTITY,
+        outputUom: DEMO_FINISHED_GOOD.defaultUom,
+        productionBatchId: 'SIAMAYA-MILK-CHOC-1000-BATCH',
+        outputLotCode: 'SIAMAYA-MILK-CHOC-1000-LOT',
+        occurredAt: DEMO_DATES.productionAt,
+        notes: 'Seeded completed demo production for 1,000 Milk Chocolate Bar 75g units.',
+        idempotencyKey,
+      },
+    },
+  )
+  log.info(`Production reported: ${result.productionReportId}`)
 }
 
 async function countBusinessWorkflowRecords(tenantId: string) {
@@ -1389,42 +1468,29 @@ async function countBusinessWorkflowRecords(tenantId: string) {
   })
 }
 
-function assertCountsUnchanged(
-  before: Record<string, number>,
-  after: Record<string, number>,
-) {
-  const changed = Object.keys(before).filter((key) => before[key] !== after[key])
-  if (changed.length > 0) {
-    throw new Error(`Manual seed created or removed transactional records: ${changed.join(', ')}`)
-  }
-}
-
-async function assertNoReservedManualWorkflowArtifacts(tenantId: string) {
+async function assertManualWorkflowPrerequisitesOnly(tenantId: string) {
   return withDbClient(async (client) => {
     const result = await client.query<Record<string, string>>(
       `SELECT
          (SELECT COUNT(*)::text
             FROM purchase_orders
            WHERE tenant_id = $1
-             AND po_number LIKE 'PO-SIAMAYA-%') AS po_siamaya,
+             AND po_number = $2) AS demo_po,
          (SELECT COUNT(*)::text
             FROM purchase_order_receipts por
             JOIN purchase_orders po
               ON po.id = por.purchase_order_id
              AND po.tenant_id = por.tenant_id
            WHERE por.tenant_id = $1
-             AND po.po_number LIKE 'PO-SIAMAYA-%') AS receipts_linked_to_siamaya_po,
+             AND po.po_number = $2) AS receipts_linked_to_demo_po,
          (SELECT COUNT(*)::text
             FROM work_orders
            WHERE tenant_id = $1
-             AND (
-               work_order_number LIKE 'WO-SIAMAYA-%'
-               OR COALESCE(number, '') LIKE 'WO-SIAMAYA-%'
-             )) AS wo_siamaya,
+             AND description = $5) AS demo_work_orders,
          (SELECT COUNT(*)::text
             FROM sales_orders
            WHERE tenant_id = $1
-             AND so_number LIKE 'SO-SIAMAYA-%') AS so_siamaya,
+             AND so_number = $3) AS demo_so,
          (SELECT COUNT(*)::text
             FROM inventory_reservations r
             JOIN sales_order_lines sol
@@ -1434,20 +1500,23 @@ async function assertNoReservedManualWorkflowArtifacts(tenantId: string) {
               ON so.id = sol.sales_order_id
              AND so.tenant_id = sol.tenant_id
            WHERE r.tenant_id = $1
-             AND so.so_number LIKE 'SO-SIAMAYA-%') AS reservations_linked_to_siamaya_so,
+             AND so.so_number = $3) AS reservations_linked_to_demo_so,
          (SELECT COUNT(*)::text
             FROM sales_order_shipments
            WHERE tenant_id = $1
-             AND external_ref LIKE 'SHIP-SIAMAYA-%') AS ship_siamaya`,
-      [tenantId],
+             AND external_ref = $4) AS demo_shipments`,
+      [tenantId, DEMO_PO.number, DEMO_SO.number, DEMO_FLOW_IDS.shipmentExternalRef, DEMO_FLOW_IDS.workOrderDescription],
     )
     const row = Object.fromEntries(
       Object.entries(result.rows[0] ?? {}).map(([key, value]) => [key, Number(value)]),
     )
-    const failures = Object.entries(row).filter(([, value]) => value !== 0)
+    const failures = Object.entries(row).filter(([key, value]) => {
+      if (key === 'demo_po' || key === 'demo_so') return value !== 1
+      return value !== 0
+    })
     if (failures.length > 0) {
       throw new Error(
-        `Manual seed reserved-prefix verification failed: ${failures
+        `Manual seed prerequisite-only verification failed: ${failures
           .map(([key, value]) => `${key}=${value}`)
           .join(', ')}`,
       )
@@ -1467,10 +1536,11 @@ async function verifyManualTopologyAndBom(tenantId: string) {
       `WITH expected_locations(code, role, sellable) AS (
          VALUES
            ('FACTORY_RECEIVING', 'HOLD', false),
-           ('FACTORY_RM_STORE', 'RM_STORE', false),
+           ('FACTORY_RM_STORE', 'SELLABLE', true),
            ('FACTORY_PACK_STORE', 'PACKAGING', false),
            ('FACTORY_PRODUCTION', 'WIP', false),
-           ('FACTORY_FG_STAGE', 'FG_SELLABLE', true)
+           ('FACTORY_FG_STAGE', 'FG_SELLABLE', true),
+           ('FACTORY_SHIPPING', 'FG_SELLABLE', true)
        ),
        location_checks AS (
          SELECT e.code,
@@ -1525,19 +1595,19 @@ async function verifyManualTopologyAndBom(tenantId: string) {
              AND uc.factor = 1000) AS mass_conversions`,
       [
         tenantId,
-        MANUAL_DEMO.bomCode,
-        DEMO.itemSku,
-        MANUAL_DEMO.components.filter((component) => component.dimension === 'mass').map((component) => component.sku),
+        DEMO_BOM_CODE,
+        DEMO_FINISHED_GOOD.sku,
+        DEMO_BOM_COMPONENTS.filter((component) => component.dimension === 'mass').map((component) => component.sku),
       ],
     )
     const row = result.rows[0]
     const failures: string[] = []
     if (row?.location_failures) failures.push(`location topology missing/incorrect: ${row.location_failures}`)
     if (Number(row?.bom_active_versions ?? 0) < 1) failures.push('active BOM version missing')
-    if (Number(row?.bom_lines ?? 0) !== MANUAL_DEMO.components.length) {
+    if (Number(row?.bom_lines ?? 0) !== DEMO_BOM_COMPONENTS.length) {
       failures.push(`BOM line count ${row?.bom_lines}`)
     }
-    const expectedMassConversions = MANUAL_DEMO.components.filter((component) => component.dimension === 'mass').length
+    const expectedMassConversions = DEMO_BOM_COMPONENTS.filter((component) => component.dimension === 'mass').length
     if (Number(row?.mass_conversions ?? 0) !== expectedMassConversions) {
       failures.push(`mass UOM conversions ${row?.mass_conversions}`)
     }
@@ -1553,7 +1623,6 @@ async function ensureMilkChocolateManufacturingPrerequisites(
   token: string,
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
-  options: { topUpComponentInventory: boolean },
 ) {
   await ensureStandardWarehouseTemplate(config, token, log)
   const { warehouse, sellable, qa } = await getDemoWarehouseContext(tenantId)
@@ -1561,28 +1630,28 @@ async function ensureMilkChocolateManufacturingPrerequisites(
   const vendor = await ensureVendor(config, token, log)
   const customer = await ensureCustomer(tenantId, log)
   const finishedItem = await ensureItem(config, token, log, {
-    sku: DEMO.itemSku,
-    name: DEMO.itemName,
+    sku: DEMO_FINISHED_GOOD.sku,
+    name: DEMO_FINISHED_GOOD.name,
     description: '75 g Siamaya demo milk chocolate bar used for 1,000-bar workflows.',
-    type: 'finished',
-    defaultUom: DEMO.uom,
-    uomDimension: 'count',
-    canonicalUom: DEMO.uom,
-    stockingUom: DEMO.uom,
+    type: DEMO_FINISHED_GOOD.type,
+    defaultUom: DEMO_FINISHED_GOOD.defaultUom,
+    uomDimension: DEMO_FINISHED_GOOD.uomDimension,
+    canonicalUom: DEMO_FINISHED_GOOD.canonicalUom,
+    stockingUom: DEMO_FINISHED_GOOD.stockingUom,
     defaultLocationId: operations.fgStage.id,
-    weight: 75,
-    weightUom: 'g',
-    isPurchasable: true,
-    isManufactured: true,
+    weight: DEMO_FINISHED_GOOD.weight,
+    weightUom: DEMO_FINISHED_GOOD.weightUom,
+    isPurchasable: DEMO_FINISHED_GOOD.isPurchasable,
+    isManufactured: DEMO_FINISHED_GOOD.isManufactured,
   })
 
   const componentItems: Array<{
-    spec: (typeof MANUAL_DEMO.components)[number]
+    spec: (typeof DEMO_BOM_COMPONENTS)[number]
     item: Item
     location: Location
   }> = []
-  for (const spec of MANUAL_DEMO.components) {
-    const location = spec.store === 'packStore' ? operations.packStore : operations.rawStore
+  for (const spec of DEMO_BOM_COMPONENTS) {
+    const location = operations.rawStore
     const item = await ensureItem(config, token, log, {
       sku: spec.sku,
       name: spec.name,
@@ -1601,13 +1670,13 @@ async function ensureMilkChocolateManufacturingPrerequisites(
     componentItems.push({ spec, item, location })
   }
 
-  await ensureBom(config, token, log, {
-    bomCode: MANUAL_DEMO.bomCode,
+  const bom = await ensureBom(config, token, log, {
+    bomCode: DEMO_BOM_CODE,
     outputItemId: finishedItem.id,
-    defaultUom: DEMO.uom,
+    defaultUom: DEMO_FINISHED_GOOD.defaultUom,
     version: {
       yieldQuantity: 1,
-      yieldUom: DEMO.uom,
+      yieldUom: DEMO_FINISHED_GOOD.defaultUom,
       components: componentItems.map(({ spec, item }, index) => ({
         lineNumber: index + 1,
         componentItemId: item.id,
@@ -1617,27 +1686,20 @@ async function ensureMilkChocolateManufacturingPrerequisites(
     },
   })
 
-  if (options.topUpComponentInventory) {
-    for (const { spec, item, location } of componentItems) {
-      await topUpInventory(config, token, tenantId, log, {
-        item,
-        location,
-        uom: spec.uom,
-        targetOnHand: spec.topUpQuantity,
-        reasonCode: 'manual_seed_opening_balance',
-      })
-    }
-  }
-
-  return { warehouse, sellable, qa, operations, vendor, customer, finishedItem, componentItems }
+  return { warehouse, sellable, qa, operations, vendor, customer, finishedItem, componentItems, bom }
 }
 
 async function verifyDemoSeed(tenantId: string) {
   return withDbClient(async (client) => {
     const result = await client.query<{
-      po_quantity: string | null
+      po_line_count: string | null
+      po_component_total_ok: string | null
       so_quantity: string | null
       shipped_quantity: string | null
+      consumed_line_count: string | null
+      consumed_component_total_ok: string | null
+      negative_balance_count: string | null
+      backorder_count: string | null
       reservation_status: string | null
       reservation_qty: string | null
       fulfilled_qty: string | null
@@ -1648,6 +1710,13 @@ async function verifyDemoSeed(tenantId: string) {
     }>(
       `WITH demo_item AS (
          SELECT id FROM items WHERE tenant_id = $1 AND sku = $2
+       ),
+       demo_components AS (
+         SELECT i.id, i.sku, v.required_qty, v.uom
+           FROM (VALUES ${DEMO_BOM_COMPONENTS.map((_, index) => `($${7 + index * 3}::text, $${8 + index * 3}::numeric, $${9 + index * 3}::text)`).join(', ')}) AS v(sku, required_qty, uom)
+           JOIN items i
+             ON i.tenant_id = $1
+            AND i.sku = v.sku
        ),
        demo_po AS (
          SELECT po.id
@@ -1668,11 +1737,19 @@ async function verifyDemoSeed(tenantId: string) {
             AND s.external_ref = $5
        )
        SELECT
-         (SELECT SUM(pol.quantity_ordered)::text
+         (SELECT COUNT(*)::text
             FROM purchase_order_lines pol
             JOIN demo_po po ON po.id = pol.purchase_order_id
-            JOIN demo_item i ON i.id = pol.item_id
-           WHERE pol.tenant_id = $1 AND pol.uom = $6) AS po_quantity,
+            JOIN demo_components c ON c.id = pol.item_id
+           WHERE pol.tenant_id = $1) AS po_line_count,
+         (SELECT COUNT(*)::text
+            FROM purchase_order_lines pol
+            JOIN demo_po po ON po.id = pol.purchase_order_id
+            JOIN demo_components c
+              ON c.id = pol.item_id
+             AND c.uom = pol.uom
+             AND ABS(c.required_qty - pol.quantity_ordered) < 0.000001
+           WHERE pol.tenant_id = $1) AS po_component_total_ok,
          (SELECT SUM(sol.quantity_ordered)::text
             FROM sales_order_lines sol
             JOIN demo_so so ON so.id = sol.sales_order_id
@@ -1684,6 +1761,33 @@ async function verifyDemoSeed(tenantId: string) {
             JOIN sales_order_lines sol ON sol.id = ssl.sales_order_line_id AND sol.tenant_id = ssl.tenant_id
             JOIN demo_item i ON i.id = sol.item_id
            WHERE ssl.tenant_id = $1 AND ssl.uom = $6) AS shipped_quantity,
+         (SELECT COUNT(*)::text
+            FROM inventory_movement_lines iml
+            JOIN inventory_movements im
+              ON im.id = iml.movement_id
+             AND im.tenant_id = iml.tenant_id
+            JOIN demo_components c
+              ON c.id = iml.item_id
+             AND c.uom = iml.uom
+             AND ABS(c.required_qty + iml.quantity_delta) < 0.000001
+           WHERE iml.tenant_id = $1
+             AND im.source_type = 'work_order_batch_post_issue') AS consumed_component_total_ok,
+         (SELECT COUNT(*)::text
+            FROM inventory_movement_lines iml
+            JOIN inventory_movements im
+              ON im.id = iml.movement_id
+             AND im.tenant_id = iml.tenant_id
+            JOIN demo_components c ON c.id = iml.item_id
+           WHERE iml.tenant_id = $1
+             AND im.source_type = 'work_order_batch_post_issue') AS consumed_line_count,
+         (SELECT COUNT(*)::text
+            FROM inventory_balance
+           WHERE tenant_id = $1
+             AND on_hand < -0.000001) AS negative_balance_count,
+         (SELECT COUNT(*)::text
+            FROM inventory_backorders
+           WHERE tenant_id = $1
+             AND status NOT IN ('fulfilled', 'cancelled', 'canceled')) AS backorder_count,
          (SELECT r.status
             FROM inventory_reservations r
             JOIN sales_order_lines sol ON sol.id = r.demand_id AND sol.tenant_id = r.tenant_id
@@ -1728,23 +1832,46 @@ async function verifyDemoSeed(tenantId: string) {
              AND ib.uom = $6
            ORDER BY ib.updated_at DESC NULLS LAST
            LIMIT 1) AS sellable_available`,
-      [tenantId, DEMO.itemSku, DEMO.poNumber, DEMO.soNumber, DEMO.shipmentExternalRef, DEMO.uom],
+      [
+        tenantId,
+        DEMO_FINISHED_GOOD.sku,
+        DEMO_PO.number,
+        DEMO_SO.number,
+        DEMO_FLOW_IDS.shipmentExternalRef,
+        DEMO_FINISHED_GOOD.defaultUom,
+        ...DEMO_BOM_COMPONENTS.flatMap((component) => [
+          component.sku,
+          componentRequirement(component.quantityPer),
+          component.uom,
+        ]),
+      ],
     )
     const row = result.rows[0]
-    const expected = String(DEMO.quantity)
+    const expected = String(DEMO_FLOW_QUANTITY)
     const failures: string[] = []
-    if (Number(row?.po_quantity ?? 0) !== DEMO.quantity) failures.push(`PO quantity ${row?.po_quantity}`)
-    if (Number(row?.so_quantity ?? 0) !== DEMO.quantity) failures.push(`SO quantity ${row?.so_quantity}`)
-    if (Number(row?.shipped_quantity ?? 0) !== DEMO.quantity) {
+    if (Number(row?.po_line_count ?? 0) !== DEMO_BOM_COMPONENTS.length) failures.push(`PO line count ${row?.po_line_count}`)
+    if (Number(row?.po_component_total_ok ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`PO component totals ${row?.po_component_total_ok}`)
+    }
+    if (Number(row?.so_quantity ?? 0) !== DEMO_FLOW_QUANTITY) failures.push(`SO quantity ${row?.so_quantity}`)
+    if (Number(row?.shipped_quantity ?? 0) !== DEMO_FLOW_QUANTITY) {
       failures.push(`shipped quantity ${row?.shipped_quantity}`)
     }
+    if (Number(row?.consumed_line_count ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`consumed line count ${row?.consumed_line_count}`)
+    }
+    if (Number(row?.consumed_component_total_ok ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`consumed component totals ${row?.consumed_component_total_ok}`)
+    }
+    if (Number(row?.negative_balance_count ?? 0) !== 0) failures.push(`negative balances ${row?.negative_balance_count}`)
+    if (Number(row?.backorder_count ?? 0) !== 0) failures.push(`backorders ${row?.backorder_count}`)
     if (row?.reservation_status !== 'FULFILLED') failures.push(`reservation status ${row?.reservation_status}`)
-    if (Number(row?.reservation_qty ?? 0) !== DEMO.quantity) failures.push(`reservation qty ${row?.reservation_qty}`)
-    if (Number(row?.fulfilled_qty ?? 0) !== DEMO.quantity) failures.push(`fulfilled qty ${row?.fulfilled_qty}`)
+    if (Number(row?.reservation_qty ?? 0) !== DEMO_FLOW_QUANTITY) failures.push(`reservation qty ${row?.reservation_qty}`)
+    if (Number(row?.fulfilled_qty ?? 0) !== DEMO_FLOW_QUANTITY) failures.push(`fulfilled qty ${row?.fulfilled_qty}`)
     if (row?.shipment_status !== 'posted') failures.push(`shipment status ${row?.shipment_status}`)
     if (!row?.shipment_movement_id) failures.push('shipment movement missing')
     if (failures.length > 0) {
-      throw new Error(`Demo seed verification failed: ${failures.join(', ')}; expected ${expected} ${DEMO.uom}`)
+      throw new Error(`Demo seed verification failed: ${failures.join(', ')}; expected ${expected} ${DEMO_FINISHED_GOOD.defaultUom}`)
     }
     return row
   })
@@ -1756,19 +1883,30 @@ async function seedMilkChocolateDemo(
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
 ) {
-  const { warehouse, sellable, vendor, customer, finishedItem } = await ensureMilkChocolateManufacturingPrerequisites(
+  const context = await ensureMilkChocolateManufacturingPrerequisites(
     config,
     token,
     tenantId,
     log,
-    { topUpComponentInventory: false },
   )
-  const po = await ensureDemoPurchaseOrder(config, token, log, vendor, finishedItem, warehouse)
-  const receipt = await ensureDemoReceipt(config, token, log, po)
+  const { warehouse, vendor, customer, finishedItem, componentItems, bom, operations } = context
+  const po = await ensureDemoPurchaseOrder(config, token, log, vendor, componentItems, warehouse)
+  const receipt = await ensureDemoReceipt(config, token, log, po, componentItems)
   await ensureDemoQcAccepted(config, token, log, receipt)
-  const so = await ensureDemoSalesOrder(config, token, log, customer, finishedItem, warehouse, sellable)
-  await ensureDemoReservation(config, token, log, so, finishedItem, warehouse, sellable)
-  const shipment = await ensureDemoShipment(config, token, log, so, sellable)
+  const workOrder = await ensureDemoWorkOrder(
+    config,
+    token,
+    tenantId,
+    log,
+    finishedItem,
+    bom,
+    context.sellable,
+    operations.fgStage,
+  )
+  await ensureDemoProductionReported(config, token, tenantId, log, workOrder.id)
+  const so = await ensureDemoSalesOrder(config, token, log, customer, finishedItem, warehouse, operations.fgStage)
+  await ensureDemoReservation(config, token, log, so, finishedItem, warehouse, operations.fgStage)
+  const shipment = await ensureDemoShipment(config, token, log, so, operations.fgStage)
   const postedShipment = await ensureDemoShipmentPosted(config, token, log, shipment)
   await markDemoSalesOrderShipped(tenantId, postedShipment)
   const verification = await verifyDemoSeed(tenantId)
@@ -1781,40 +1919,27 @@ async function verifyManualSeed(
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
   context: Awaited<ReturnType<typeof ensureMilkChocolateManufacturingPrerequisites>>,
-  countsBefore: Record<string, number>,
 ) {
   const countsAfter = await countBusinessWorkflowRecords(tenantId)
-  assertCountsUnchanged(countsBefore, countsAfter)
-  const reservedWorkflowArtifacts = await assertNoReservedManualWorkflowArtifacts(tenantId)
+  const workflowPrerequisitesOnly = await assertManualWorkflowPrerequisitesOnly(tenantId)
   const prerequisiteVerification = await verifyManualTopologyAndBom(tenantId)
 
-  const itemVisible = await findItemBySku(config, token, DEMO.itemSku)
-  if (!itemVisible) throw new Error(`Manual seed item is not visible through API: ${DEMO.itemSku}`)
+  const itemVisible = await findItemBySku(config, token, DEMO_FINISHED_GOOD.sku)
+  if (!itemVisible) throw new Error(`Manual seed item is not visible through API: ${DEMO_FINISHED_GOOD.sku}`)
   const vendors = await apiRequest<{ data?: Vendor[] } | Vendor[]>(config, 'GET', '/vendors', {
     token,
     params: { active: true },
   })
   const vendorRows = Array.isArray(vendors) ? vendors : vendors.data ?? []
-  if (!vendorRows.some((row) => row.code === DEMO.vendorCode)) {
-    throw new Error(`Manual seed supplier is not visible through API: ${DEMO.vendorCode}`)
+  if (!vendorRows.some((row) => row.code === DEMO_SUPPLIER.code)) {
+    throw new Error(`Manual seed supplier is not visible through API: ${DEMO_SUPPLIER.code}`)
   }
   const rawStoreVisible = await findLocationByCode(config, token, MANUAL_DEMO.rawMaterialLocationCodes.rawStore)
   if (!rawStoreVisible) throw new Error('Manual seed raw material location is not visible through API')
 
-  const failures: string[] = []
-  for (const { spec, item, location } of context.componentItems) {
-    const onHand = await getInventoryOnHand(tenantId, item.id, location.id, spec.uom)
-    if (onHand < spec.topUpQuantity) {
-      failures.push(`${item.sku} on-hand ${onHand} ${spec.uom}; expected at least ${spec.topUpQuantity}`)
-    }
-  }
-  if (failures.length > 0) {
-    throw new Error(`Manual seed inventory verification failed: ${failures.join('; ')}`)
-  }
-
   log.info('Manual Siamaya prerequisite verification passed.', {
     transactionalRecordCounts: countsAfter,
-    reservedWorkflowArtifacts,
+    workflowPrerequisitesOnly,
     prerequisiteVerification,
     finishedItemSku: context.finishedItem.sku,
     supplierCode: context.vendor.code,
@@ -1829,17 +1954,48 @@ async function seedManualSiamayaScenario(
   tenantId: string,
   log: ReturnType<typeof makeLogger>,
 ) {
-  const countsBefore = await countBusinessWorkflowRecords(tenantId)
-  const context = await ensureMilkChocolateManufacturingPrerequisites(config, token, tenantId, log, {
-    topUpComponentInventory: true,
-  })
-  await verifyManualSeed(config, token, tenantId, log, context, countsBefore)
+  const context = await ensureMilkChocolateManufacturingPrerequisites(config, token, tenantId, log)
+  await ensureDemoPurchaseOrder(config, token, log, context.vendor, context.componentItems, context.warehouse)
+  await ensureDemoSalesOrder(
+    config,
+    token,
+    log,
+    context.customer,
+    context.finishedItem,
+    context.warehouse,
+    context.operations.fgStage,
+  )
+  await verifyManualSeed(config, token, tenantId, log, context)
   log.info('Siamaya manual UI scenario seed complete.')
 }
 
-async function main() {
+function printDemoSummary(config: SeedConfig, adminEmail: string, mode: SeedMode) {
+  console.log('')
+  console.log('Siamaya 1,000 Milk Chocolate Bar demo seed summary')
+  console.log(`Tenant: ${config.tenantSlug}`)
+  console.log(`Admin login: ${adminEmail}`)
+  console.log(`Finished good SKU: ${DEMO_FINISHED_GOOD.sku}`)
+  console.log(`BOM code: ${DEMO_BOM_CODE}`)
+  console.log(`Purchase order: ${DEMO_PO.number}`)
+  console.log(`Sales order: ${DEMO_SO.number}`)
+  if (mode === 'manual') {
+    console.log('Next manual demo steps:')
+    console.log('1. Receive the purchase order ingredient and wrapper lines.')
+    console.log('2. QC accept the received lines if the UI shows them in QA.')
+    console.log('3. Put away ingredients and wrappers if the UI presents a putaway task.')
+    console.log('4. Create or execute production for 1,000 bars using the active BOM.')
+    console.log('5. Confirm finished goods are available in finished goods sellable stock.')
+    console.log('6. Reserve 1,000 finished bars to the sales order.')
+    console.log('7. Create and post the shipment for 1,000 bars.')
+  } else {
+    console.log(`Completed mode posted shipment: ${DEMO_FLOW_IDS.shipmentExternalRef}`)
+  }
+  console.log('')
+}
+
+export async function runChocolateSeed(overrides: Partial<SeedConfig> = {}) {
   assertNonProductionEnvironment('chocolate-seed')
-  const config = loadConfig()
+  const config = { ...loadConfig(), ...overrides }
   const log = makeLogger(config.logLevel)
 
   log.info('Seed starting.', {
@@ -1867,356 +2023,18 @@ async function main() {
 
   if (config.mode === 'manual') {
     await seedManualSiamayaScenario(config, token, tenantId, log)
+    printDemoSummary(config, session.adminEmail, 'manual')
     return
   }
 
-  const mainLocation = await ensureLocation(config, token, log, 'MAIN', 'Main Warehouse', 'warehouse')
-
-  const sku = (base: string) => (config.prefix ? `${config.prefix}-${base}` : base)
-
-  const items = {
-    rawCacao: await ensureItem(config, token, log, {
-      sku: sku('RAW-CACAO-BEANS'),
-      name: 'Raw cacao beans',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    sugar: await ensureItem(config, token, log, {
-      sku: sku('SUGAR'),
-      name: 'Sugar',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    cacaoButter: await ensureItem(config, token, log, {
-      sku: sku('CACAO-BUTTER'),
-      name: 'Cacao butter',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    milkPowder: await ensureItem(config, token, log, {
-      sku: sku('MILK-POWDER'),
-      name: 'Milk powder',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    lecithin: await ensureItem(config, token, log, {
-      sku: sku('LECITHIN'),
-      name: 'Lecithin',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    durianPowder: await ensureItem(config, token, log, {
-      sku: sku('DURIAN-POWDER'),
-      name: 'Durian powder',
-      type: 'raw',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    cacaoNibs: await ensureItem(config, token, log, {
-      sku: sku('CACAO-NIBS'),
-      name: 'Cacao nibs',
-      type: 'wip',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    baseMilk: await ensureItem(config, token, log, {
-      sku: sku('BASE-MILK-50'),
-      name: 'Base นม 50% (Milk)',
-      type: 'wip',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    durianBaseMix: await ensureItem(config, token, log, {
-      sku: sku('DURIAN-BASE-MIX'),
-      name: 'Durian chocolate base mix',
-      type: 'wip',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    barBig: await ensureItem(config, token, log, {
-      sku: sku('DURIAN-BAR-BIG'),
-      name: 'Durian chocolate bar - Big (75 g)',
-      type: 'finished',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-      weight: 75,
-      weightUom: 'g',
-    }),
-    barSmall: await ensureItem(config, token, log, {
-      sku: sku('DURIAN-BAR-SMALL'),
-      name: 'Durian chocolate bar - Small (20 g)',
-      type: 'finished',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-      weight: 20,
-      weightUom: 'g',
-    }),
-    foilWrap: await ensureItem(config, token, log, {
-      sku: sku('FOIL-WRAP'),
-      name: 'Foil wrapper',
-      type: 'packaging',
-      defaultUom: 'g',
-      uomDimension: 'mass',
-      canonicalUom: 'g',
-      stockingUom: 'g',
-      defaultLocationId: mainLocation.id,
-    }),
-    innerBox: await ensureItem(config, token, log, {
-      sku: sku('INNER-BOX'),
-      name: 'Inner box (big)',
-      type: 'packaging',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-    }),
-    innerBoxSmall: await ensureItem(config, token, log, {
-      sku: sku('INNER-BOX-SMALL'),
-      name: 'Inner box (small)',
-      type: 'packaging',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-    }),
-    whiteBox: await ensureItem(config, token, log, {
-      sku: sku('WHITE-BOX-12'),
-      name: 'White box (holds 12 bars)',
-      type: 'packaging',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-    }),
-    shippingBox: await ensureItem(config, token, log, {
-      sku: sku('SHIPPING-BOX-10'),
-      name: 'Shipping box (holds 10 white boxes)',
-      type: 'packaging',
-      defaultUom: 'each',
-      uomDimension: 'count',
-      canonicalUom: 'each',
-      stockingUom: 'each',
-      defaultLocationId: mainLocation.id,
-    }),
-  }
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-CACAO-NIBS-YIELD'),
-    outputItemId: items.cacaoNibs.id,
-    defaultUom: 'g',
-    version: {
-      yieldQuantity: 75000,
-      yieldUom: 'g',
-      components: [
-        {
-          lineNumber: 1,
-          componentItemId: items.rawCacao.id,
-          uom: 'g',
-          quantityPer: 100000,
-        },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-BASE-MILK-50'),
-    outputItemId: items.baseMilk.id,
-    defaultUom: 'g',
-    version: {
-      yieldQuantity: 1000,
-      yieldUom: 'g',
-      components: [
-        { lineNumber: 1, componentItemId: items.cacaoNibs.id, uom: 'g', quantityPer: 400 },
-        { lineNumber: 2, componentItemId: items.sugar.id, uom: 'g', quantityPer: 350 },
-        { lineNumber: 3, componentItemId: items.cacaoButter.id, uom: 'g', quantityPer: 100 },
-        { lineNumber: 4, componentItemId: items.milkPowder.id, uom: 'g', quantityPer: 150 },
-        { lineNumber: 5, componentItemId: items.lecithin.id, uom: 'g', quantityPer: 3 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-DURIAN-BASE-MIX'),
-    outputItemId: items.durianBaseMix.id,
-    defaultUom: 'g',
-    version: {
-      yieldQuantity: 1025,
-      yieldUom: 'g',
-      components: [
-        { lineNumber: 1, componentItemId: items.baseMilk.id, uom: 'g', quantityPer: 1000 },
-        { lineNumber: 2, componentItemId: items.durianPowder.id, uom: 'g', quantityPer: 25 },
-      ],
-    },
-  })
-
-  const whiteBoxPerBar = 1 / 12
-  const shippingBoxPerBar = 1 / 120
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-DURIAN-BAR-BIG'),
-    outputItemId: items.barBig.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 75 },
-        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 3 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-DURIAN-BAR-SMALL'),
-    outputItemId: items.barSmall.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.durianBaseMix.id, uom: 'g', quantityPer: 20 },
-        { lineNumber: 2, componentItemId: items.foilWrap.id, uom: 'g', quantityPer: 1 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-INNER-BOX-BIG'),
-    outputItemId: items.innerBox.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.barBig.id, uom: 'each', quantityPer: 1 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-INNER-BOX-SMALL'),
-    outputItemId: items.innerBoxSmall.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.barSmall.id, uom: 'each', quantityPer: 1 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-WHITE-BOX-12'),
-    outputItemId: items.whiteBox.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.innerBox.id, uom: 'each', quantityPer: 12 },
-      ],
-    },
-  })
-
-  await ensureBom(config, token, log, {
-    bomCode: sku('BOM-SHIPPING-BOX-10'),
-    outputItemId: items.shippingBox.id,
-    defaultUom: 'each',
-    version: {
-      yieldQuantity: 1,
-      yieldUom: 'each',
-      components: [
-        { lineNumber: 1, componentItemId: items.whiteBox.id, uom: 'each', quantityPer: 10 },
-      ],
-    },
-  })
-
-  if (config.seedOpeningBalances) {
-    const massItemsKg = [
-      items.rawCacao,
-      items.sugar,
-      items.cacaoButter,
-      items.cacaoNibs,
-      items.baseMilk,
-      items.durianBaseMix,
-    ]
-    for (const item of massItemsKg) {
-      await ensureUomConversion(config, token, log, item.id, 'kg', 'g', 1000)
-    }
-
-    const itemsForBalances: Array<{ item: Item; uom: string; quantity: number }> = [
-      { item: items.rawCacao, uom: 'kg', quantity: 50 },
-      { item: items.sugar, uom: 'kg', quantity: 40 },
-      { item: items.cacaoButter, uom: 'kg', quantity: 25 },
-      { item: items.cacaoNibs, uom: 'kg', quantity: 30 },
-      { item: items.baseMilk, uom: 'kg', quantity: 20 },
-      { item: items.durianBaseMix, uom: 'kg', quantity: 10 },
-      { item: items.milkPowder, uom: 'g', quantity: 15000 },
-      { item: items.lecithin, uom: 'g', quantity: 2000 },
-      { item: items.durianPowder, uom: 'g', quantity: 5000 },
-      { item: items.barBig, uom: 'each', quantity: 200 },
-      { item: items.barSmall, uom: 'each', quantity: 400 },
-      { item: items.foilWrap, uom: 'g', quantity: 3000 },
-      { item: items.innerBox, uom: 'each', quantity: 1000 },
-      { item: items.innerBoxSmall, uom: 'each', quantity: 1000 },
-      { item: items.whiteBox, uom: 'each', quantity: 120 },
-      { item: items.shippingBox, uom: 'each', quantity: 20 },
-    ]
-
-    for (const entry of itemsForBalances) {
-      await createOpeningBalance(config, token, entry.item, mainLocation.id, entry.uom, entry.quantity)
-      log.info(`Opening balance posted for ${entry.item.sku}`)
-    }
-  }
-
   await seedMilkChocolateDemo(config, token, tenantId, log)
-
+  printDemoSummary(config, session.adminEmail, 'completed')
   log.info('Chocolate canonical seed complete.')
 }
 
-main().catch((err) => {
-  console.error('[choc-seed] Failed:', err)
-  process.exit(1)
-})
+if (require.main === module) {
+  runChocolateSeed().catch((err) => {
+    console.error('[choc-seed] Failed:', err)
+    process.exit(1)
+  })
+}

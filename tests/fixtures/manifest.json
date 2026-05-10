@@ -1,5 +1,6 @@
 {
   "files": [
+    "tests/fixtures/chocolate-seed-siamaya-demo.test.mjs",
     "tests/fixtures/seed-siamaya-factory.test.mjs"
   ]
 }
