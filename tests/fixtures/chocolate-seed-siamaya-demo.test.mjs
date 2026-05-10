@@ -22,7 +22,7 @@ const {
   DEMO_SKUS,
   DEMO_SO,
   DEMO_SUPPLIER,
-  LEGACY_SEED_VENDOR_CODES
+  OBSOLETE_SEED_VENDOR_CODES
 } = require('../../scripts/chocolate-seed.ts');
 
 const TEST_TENANT_SLUG = 'siamaya';
@@ -691,9 +691,9 @@ test('fresh reset + manual seed does not create legacy SIAMAYA-DEMO-CHOCOLATE-SU
 
   const result = await pool.query(
     `SELECT code FROM vendors WHERE tenant_id = $1 AND code = ANY($2::text[])`,
-    [tenantId, Array.from(LEGACY_SEED_VENDOR_CODES)]
+    [tenantId, Array.from(OBSOLETE_SEED_VENDOR_CODES)]
   );
-  assert.equal(result.rows.length, 0, `Legacy seed vendor codes found: ${JSON.stringify(result.rows.map((r) => r.code))}`);
+  assert.equal(result.rows.length, 0, `Obsolete seed-owned vendor codes found: ${JSON.stringify(result.rows.map((r) => r.code))}`);
 });
 
 test('non-reset manual seed rerun does not create duplicate active suppliers', { timeout: 240000 }, async () => {
