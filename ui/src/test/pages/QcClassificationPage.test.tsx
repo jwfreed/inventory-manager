@@ -105,6 +105,8 @@ describe('QcClassificationPage keyboard shortcuts', () => {
     bulkAcceptQcLines: vi.fn(),
     bulkHoldQcLines: vi.fn(),
     bulkRejectQcLines: vi.fn(),
+    isBulkProcessing: false,
+    bulkError: null,
     selectAllQcLines: vi.fn(),
     toggleQcLineSelection: vi.fn(),
     setSelectedQcLineId: vi.fn(),

@@ -256,6 +256,7 @@ export type ReceivingContextValue = {
   bulkHoldQcLines: (reasonCode: string, notes: string) => Promise<void>
   bulkRejectQcLines: (reasonCode: string, notes: string) => Promise<void>
   isBulkProcessing: boolean
+  bulkError: string | null
 
   // ── Offline Support ──
   isOnline: boolean
@@ -346,6 +347,7 @@ export function ReceivingProvider({ children }: Props) {
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<Set<string>>(new Set())
   const [selectedQcLineIds, setSelectedQcLineIds] = useState<Set<string>>(new Set())
   const [isBulkProcessing, setIsBulkProcessing] = useState(false)
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   // ── Offline Queue ──
   // Permission guards for mutation operations
@@ -1166,6 +1168,7 @@ export function ReceivingProvider({ children }: Props) {
 
     bulkQcSubmitInFlightRef.current = true
     setIsBulkProcessing(true)
+    setBulkError(null)
     try {
       const selectedLines = receiptQuery.data.lines?.filter((line) => selectedQcLineIds.has(line.id)) ?? []
       
@@ -1191,7 +1194,15 @@ export function ReceivingProvider({ children }: Props) {
       await queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
       clearQcLineSelection()
     } catch (error) {
-      console.error('Bulk accept failed:', error)
+      const apiError = error as { status?: number } | null
+      if (apiError?.status === 401) {
+        // Auth session has already been cleared by the HTTP layer; redirect to login will follow.
+        // Do not set bulkError — the session-expired message appears on the login page.
+      } else {
+        console.error('Bulk accept failed:', error)
+        const message = (error as { message?: string })?.message
+        setBulkError(message && message.trim() ? message : 'Bulk accept failed. Please try again.')
+      }
     } finally {
       setIsBulkProcessing(false)
       bulkQcSubmitInFlightRef.current = false
@@ -1699,6 +1710,7 @@ export function ReceivingProvider({ children }: Props) {
       bulkHoldQcLines,
       bulkRejectQcLines,
       isBulkProcessing,
+      bulkError,
 
       // Utilities
       getErrorMessage,
@@ -1802,6 +1814,7 @@ export function ReceivingProvider({ children }: Props) {
       bulkHoldQcLines,
       bulkRejectQcLines,
       isBulkProcessing,
+      bulkError,
       getErrorMessage,
       mapErrorMessage,
       isOnline,

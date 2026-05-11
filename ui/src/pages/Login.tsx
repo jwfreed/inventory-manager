@@ -116,7 +116,7 @@ export default function LoginPage() {
             <Alert
               variant="warning"
               title="Session expired"
-              message="Your session is no longer valid. Sign in again to continue."
+              message="Your session expired. Please sign in again."
             />
           )}
           {redirectReason === 'remote-signout' && (

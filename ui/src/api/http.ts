@@ -81,9 +81,7 @@ export async function refreshAccessToken() {
       })
 
       if (!response.ok) {
-        if (response.status === 401) {
-          clearAuthSession('refresh-failed')
-        }
+        clearAuthSession('refresh-failed')
         return null
       }
 

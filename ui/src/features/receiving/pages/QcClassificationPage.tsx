@@ -218,6 +218,11 @@ export default function QcClassificationPage() {
             />
           )}
 
+          {/* Bulk operation error */}
+          {ctx.bulkError && (
+            <Alert variant="error" title="Bulk action failed" message={ctx.bulkError} />
+          )}
+
           {/* Search and Filters */}
           <SearchFiltersBar
             filters={ctx.receivingFilters}
@@ -389,7 +394,14 @@ export default function QcClassificationPage() {
                         qcEventsLoading={false}
                         qcEventsError={false}
                         lastEvent={ctx.lastQcEvent}
-                        mutationErrorMessage={undefined}
+                        mutationErrorMessage={
+                          ctx.qcEventMutation.error && (ctx.qcEventMutation.error as { status?: number })?.status !== 401
+                            ? ctx.mapErrorMessage(
+                                ctx.getErrorMessage(ctx.qcEventMutation.error, 'Failed to record QC event.'),
+                                QC_ERROR_MAP,
+                              )
+                            : undefined
+                        }
                         mutationPending={ctx.qcEventMutation.isPending}
                         holdDispositionPending={ctx.holdDispositionMutation.isPending}
                         holdDispositionErrorMessage={
