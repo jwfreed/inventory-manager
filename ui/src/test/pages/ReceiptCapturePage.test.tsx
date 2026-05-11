@@ -6,6 +6,7 @@ import { renderWithQueryClient } from '../testUtils'
 import ReceiptCapturePage from '../../features/receiving/pages/ReceiptCapturePage'
 import { useReceivingContext } from '../../features/receiving/context'
 import type { ReceiptLineInput, ReceiptLineSummary } from '../../features/receiving/types'
+import { parseReceiptQuantityForValidation } from '../../features/receiving/utils'
 
 vi.mock('@shared/auth', () => ({
   useAuth: () => ({ user: { fullName: 'Receiver One', email: 'receiver@example.com' } }),
@@ -59,7 +60,8 @@ const receiptLines: ReceiptLineInput[] = [
 
 const buildSummary = (lines = receiptLines): ReceiptLineSummary => {
   const summaryLines = lines.map((line) => {
-    const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+    const received = parseReceiptQuantityForValidation(line.receivedQty)
+    const receivedQty = received.value
     const expectedQty = Number(line.expectedQty)
     return {
       ...line,
@@ -67,6 +69,7 @@ const buildSummary = (lines = receiptLines): ReceiptLineSummary => {
       expectedQty,
       delta: receivedQty - expectedQty,
       remaining: Math.max(0, expectedQty - receivedQty),
+      invalidQuantity: !received.valid,
     }
   })
   return {
@@ -74,7 +77,7 @@ const buildSummary = (lines = receiptLines): ReceiptLineSummary => {
     receivedLines: summaryLines.filter((line) => line.receivedQty > 0),
     discrepancyLines: summaryLines.filter((line) => line.delta !== 0),
     missingReasons: [],
-    invalidLines: [],
+    invalidLines: summaryLines.filter((line) => line.invalidQuantity || line.receivedQty < 0),
     missingLotSerial: [],
     overApprovalMissing: [],
     remainingLines: summaryLines.filter((line) => line.remaining > 0),
@@ -177,6 +180,21 @@ describe('ReceiptCapturePage receipt capture display', () => {
     expect(next[0]).toMatchObject({ receivedQty: 30000, discrepancyReason: '' })
   })
 
+  it('does not make Post receipt available when a quantity is invalid', () => {
+    const invalidSummary = buildSummary(receiptLines)
+    invalidSummary.invalidLines = [{ ...invalidSummary.lines[0], invalidQuantity: true }]
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        receiptLineSummary: invalidSummary,
+        canPostReceipt: false,
+      }) as any,
+    )
+
+    renderPage()
+
+    expect(screen.getByRole('button', { name: /Post receipt/i })).toBeDisabled()
+  })
+
   it('distinguishes receipt readiness from posted workflow completion', () => {
     renderPage()
 
@@ -193,5 +211,17 @@ describe('ReceiptCapturePage receipt capture display', () => {
     expect(screen.getByText('Receipt history')).toBeInTheDocument()
     expect(screen.getByText('No receipts posted for this PO yet.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View all' })).toBeInTheDocument()
+  })
+
+  it('keeps receipt notes in the form', () => {
+    const setReceiptNotes = vi.fn()
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({ setReceiptNotes }) as any,
+    )
+
+    renderPage()
+    fireEvent.change(screen.getByLabelText(/Notes/i), { target: { value: 'Packaging dented' } })
+
+    expect(setReceiptNotes).toHaveBeenCalledWith('Packaging dented')
   })
 })

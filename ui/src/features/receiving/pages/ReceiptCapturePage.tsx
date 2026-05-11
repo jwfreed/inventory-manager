@@ -396,7 +396,7 @@ export default function ReceiptCapturePage() {
                                   ? 'Receiving location is required.'
                                   : null,
                                 ctx.receiptLineSummary.invalidLines.length > 0
-                                  ? 'Negative quantities are not allowed.'
+                                  ? 'Quantities must be valid numbers 0 or greater.'
                                   : null,
                                 ctx.receiptLineSummary.missingReasons.length > 0
                                   ? 'Discrepancy reasons are required.'
@@ -476,6 +476,21 @@ export default function ReceiptCapturePage() {
                       />
                     )}
 
+                    {/* Notes */}
+                    <div>
+                      <label htmlFor="receipt-notes" className="block text-sm font-medium text-slate-700 mb-1">
+                        Notes <span className="text-slate-500">(optional)</span>
+                      </label>
+                      <Textarea
+                        id="receipt-notes"
+                        value={ctx.receiptNotes}
+                        onChange={(e) => ctx.setReceiptNotes(e.target.value)}
+                        placeholder="Add notes about this receipt (damaged packaging, early delivery, etc.)…"
+                        rows={3}
+                        disabled={ctx.receiptMutation.isPending || posted}
+                      />
+                    </div>
+
                     {/* Summary and Submit */}
                     <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200 bg-white px-4 py-3 shadow-sm">
                       <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
@@ -492,10 +507,10 @@ export default function ReceiptCapturePage() {
                               - {ctx.receiptLineSummary.discrepancyLines.length} discrepancies
                             </span>
                           )}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Posting as {user?.fullName || user?.email || 'user'} at{' '}
-                          {new Date().toLocaleTimeString()}
+                          <div className="mt-1 text-xs font-normal text-slate-400">
+                            Posting as {user?.fullName || user?.email || 'user'} at{' '}
+                            {new Date().toLocaleTimeString()}
+                          </div>
                         </div>
                         <Button
                           type="submit"
@@ -506,21 +521,6 @@ export default function ReceiptCapturePage() {
                           <KeyboardHint shortcut="Ctrl+S" />
                         </Button>
                       </div>
-                    </div>
-
-                    {/* Notes */}
-                    <div>
-                      <label htmlFor="receipt-notes" className="block text-sm font-medium text-slate-700 mb-1">
-                        Notes <span className="text-slate-500">(optional)</span>
-                      </label>
-                      <Textarea
-                        id="receipt-notes"
-                        value={ctx.receiptNotes}
-                        onChange={(e) => ctx.setReceiptNotes(e.target.value)}
-                        placeholder="Add notes about this receipt (damaged packaging, early delivery, etc.)…"
-                        rows={3}
-                        disabled={ctx.receiptMutation.isPending || posted}
-                      />
                     </div>
 
                     {/* Error Message */}

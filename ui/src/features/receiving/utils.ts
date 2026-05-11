@@ -12,6 +12,12 @@ const toQuantityNumber = (value: unknown): number => {
 
 export const normalizeReceiptQuantity = toQuantityNumber
 
+export const parseReceiptQuantityForValidation = (value: unknown): { value: number; valid: boolean } => {
+  if (value === '') return { value: 0, valid: true }
+  const parsed = Number(value)
+  return { value: Number.isFinite(parsed) ? parsed : 0, valid: Number.isFinite(parsed) }
+}
+
 export const formatReceiptQuantity = (value: unknown): string => {
   return formatNumber(toQuantityNumber(value))
 }

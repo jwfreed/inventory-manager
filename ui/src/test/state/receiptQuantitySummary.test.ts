@@ -3,6 +3,7 @@ import type { ReceiptLineSummary } from '../../features/receiving/types'
 import {
   formatReceiptQuantitySummary,
   normalizeReceiptQuantity,
+  parseReceiptQuantityForValidation,
 } from '../../features/receiving/utils'
 
 const summary = (lines: Array<{ uom: string; expectedQty: unknown; receivedQty: unknown }>): ReceiptLineSummary =>
@@ -44,6 +45,8 @@ describe('receipt quantity summary formatting', () => {
     )
 
     expect(text).toBe('76,000 g + 1,000 each ready to post')
+    expect(text).not.toContain('75,00 g')
+    expect(text).not.toContain('1,00 each')
     expect(text).not.toContain('030000.0000020000')
     expect(text).not.toContain('.00000')
   })
@@ -67,5 +70,11 @@ describe('receipt quantity summary formatting', () => {
         ]),
       ),
     ).toBe('40,000 of 76,000 g received · 500 of 1,000 each received')
+  })
+
+  it('keeps display-safe normalization separate from validation parsing', () => {
+    expect(normalizeReceiptQuantity(Number.NaN)).toBe(0)
+    expect(parseReceiptQuantityForValidation(Number.NaN)).toEqual({ value: 0, valid: false })
+    expect(parseReceiptQuantityForValidation('')).toEqual({ value: 0, valid: true })
   })
 })

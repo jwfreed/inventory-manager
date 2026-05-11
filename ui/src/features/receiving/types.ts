@@ -22,6 +22,7 @@ export type ReceiptLineSummaryLine = ReceiptLineInput & {
   expectedQty: number
   delta: number
   remaining: number
+  invalidQuantity?: boolean
 }
 
 export type ReceiptLineSummary = {

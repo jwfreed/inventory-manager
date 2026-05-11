@@ -12,6 +12,18 @@ type Props = {
   disabled?: boolean
 }
 
+const parseQuantityForDisplay = (value: number | '') => {
+  if (value === '') return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const isInvalidQuantity = (value: number | '') => {
+  if (value === '') return false
+  const parsed = Number(value)
+  return !Number.isFinite(parsed) || parsed < 0
+}
+
 export function ReceiptLinesTable({
   lines,
   onLineChange,
@@ -33,7 +45,7 @@ export function ReceiptLinesTable({
     if (!focusTarget) return
     const line = lines.find((row) => row.purchaseOrderLineId === focusTarget)
     if (line) {
-      const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+      const receivedQty = parseQuantityForDisplay(line.receivedQty)
       const expectedQty = line.expectedQty ?? 0
       const delta = receivedQty - expectedQty
       const needsReason = delta !== 0 && !line.discrepancyReason
@@ -109,6 +121,7 @@ export function ReceiptLinesTable({
     if (focusNotes(lineId)) return
     focusNextQty(lineId)
   }
+
   return (
     <DataTable
       rows={lines}
@@ -152,11 +165,11 @@ export function ReceiptLinesTable({
           header: 'Received',
           cell: (line) => {
             const expectedQty = line.expectedQty ?? 0
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const receivedQty = parseQuantityForDisplay(line.receivedQty)
             const delta = receivedQty - expectedQty
             const hasVariance = delta !== 0
             const isMatch = delta === 0 && receivedQty > 0
-            const isInvalid = receivedQty < 0
+            const isInvalid = isInvalidQuantity(line.receivedQty)
             const hasLotError = line.requiresLot && receivedQty > 0 && !(line.lotCode ?? '').trim()
             const hasSerialError =
               line.requiresSerial &&
@@ -220,7 +233,7 @@ export function ReceiptLinesTable({
                 <div className="text-xs text-slate-500">{line.uom}</div>
                 {isInvalid && (
                   <div id={qtyErrorId} className="text-xs text-red-600">
-                    Quantity must be 0 or greater.
+                    Quantity must be a valid number 0 or greater.
                   </div>
                 )}
               </div>
@@ -232,7 +245,7 @@ export function ReceiptLinesTable({
           header: 'Delta',
           cell: (line) => {
             const expectedQty = line.expectedQty ?? 0
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const receivedQty = parseQuantityForDisplay(line.receivedQty)
             const delta = receivedQty - expectedQty
             if (receivedQty === 0 && expectedQty === 0) {
               return <span className="text-xs text-slate-500">—</span>
@@ -255,7 +268,7 @@ export function ReceiptLinesTable({
           id: 'remaining',
           header: 'Remaining',
           cell: (line) => {
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const receivedQty = parseQuantityForDisplay(line.receivedQty)
             const remaining = Math.max(0, (line.expectedQty ?? 0) - receivedQty)
             return (
               <div className="text-sm text-slate-700">
@@ -289,7 +302,7 @@ export function ReceiptLinesTable({
           id: 'discrepancy',
           header: 'Discrepancy',
           cell: (line) => {
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const receivedQty = parseQuantityForDisplay(line.receivedQty)
             const expectedQty = line.expectedQty ?? 0
             const delta = receivedQty - expectedQty
             const hasVariance = delta !== 0
@@ -373,7 +386,7 @@ export function ReceiptLinesTable({
           id: 'lotSerial',
           header: 'Lot / Serial',
           cell: (line) => {
-            const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
+            const receivedQty = parseQuantityForDisplay(line.receivedQty)
             const lotRequired = line.requiresLot && receivedQty > 0
             const serialRequired = line.requiresSerial && receivedQty > 0
             const serialList = (line.serialNumbers ?? []).join(', ')

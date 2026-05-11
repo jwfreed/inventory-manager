@@ -26,7 +26,12 @@ import {
   type QcEventCreatePayload,
 } from '../api/qc'
 import { receivingQueryKeys, usePutaway, useQcEventsForLine, useReceipt, useReceiptsList } from '../queries'
-import { buildReceiptLines, getQcBreakdown, normalizeReceiptQuantity } from '../utils'
+import {
+  buildReceiptLines,
+  getQcBreakdown,
+  normalizeReceiptQuantity,
+  parseReceiptQuantityForValidation,
+} from '../utils'
 import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, ReceiptLineSummary } from '../types'
 import type { PurchaseOrderReceiptLine, PurchaseOrderReceipt, QcEvent, Putaway } from '@api/types'
 import type { ReceivingFilters } from '../components/SearchFiltersBar'
@@ -538,16 +543,17 @@ export function ReceivingProvider({ children }: Props) {
 
   const receiptLineSummary = useMemo<ReceiptLineSummary>(() => {
     const lines = resolvedReceiptLineInputs.map((line) => {
-      const receivedQty = normalizeReceiptQuantity(line.receivedQty)
+      const received = parseReceiptQuantityForValidation(line.receivedQty)
+      const receivedQty = received.value
       const expectedQty = normalizeReceiptQuantity(line.expectedQty)
       const delta = receivedQty - expectedQty
       const remaining = Math.max(0, expectedQty - receivedQty)
-      return { ...line, receivedQty, expectedQty, delta, remaining }
+      return { ...line, receivedQty, expectedQty, delta, remaining, invalidQuantity: !received.valid }
     })
     const receivedLines = lines.filter((line) => line.receivedQty > 0)
     const discrepancyLines = lines.filter((line) => line.delta !== 0)
     const missingReasons = discrepancyLines.filter((line) => !line.discrepancyReason)
-    const invalidLines = lines.filter((line) => line.receivedQty < 0)
+    const invalidLines = lines.filter((line) => line.invalidQuantity || line.receivedQty < 0)
     const missingLotSerial = lines.filter((line) => {
       if (line.receivedQty <= 0) return false
       if (line.requiresLot && !(line.lotCode ?? '').trim()) return true
