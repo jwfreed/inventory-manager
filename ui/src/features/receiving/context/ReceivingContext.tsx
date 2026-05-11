@@ -26,7 +26,7 @@ import {
   type QcEventCreatePayload,
 } from '../api/qc'
 import { receivingQueryKeys, usePutaway, useQcEventsForLine, useReceipt, useReceiptsList } from '../queries'
-import { buildReceiptLines, getQcBreakdown } from '../utils'
+import { buildReceiptLines, getQcBreakdown, normalizeReceiptQuantity } from '../utils'
 import type { PutawayLineInput, QcDraft, ReceiptLineInput, ReceiptLineOption, ReceiptLineSummary } from '../types'
 import type { PurchaseOrderReceiptLine, PurchaseOrderReceipt, QcEvent, Putaway } from '@api/types'
 import type { ReceivingFilters } from '../components/SearchFiltersBar'
@@ -538,8 +538,8 @@ export function ReceivingProvider({ children }: Props) {
 
   const receiptLineSummary = useMemo<ReceiptLineSummary>(() => {
     const lines = resolvedReceiptLineInputs.map((line) => {
-      const receivedQty = line.receivedQty === '' ? 0 : Number(line.receivedQty)
-      const expectedQty = line.expectedQty ?? 0
+      const receivedQty = normalizeReceiptQuantity(line.receivedQty)
+      const expectedQty = normalizeReceiptQuantity(line.expectedQty)
       const delta = receivedQty - expectedQty
       const remaining = Math.max(0, expectedQty - receivedQty)
       return { ...line, receivedQty, expectedQty, delta, remaining }
@@ -567,8 +567,8 @@ export function ReceivingProvider({ children }: Props) {
       return line.receivedQty - allowed > 1e-6 && !line.overReceiptApproved
     })
     const remainingLines = lines.filter((line) => line.remaining > 0)
-    const totalExpected = lines.reduce((sum, line) => sum + line.expectedQty, 0)
-    const totalReceived = lines.reduce((sum, line) => sum + line.receivedQty, 0)
+    const totalExpected = lines.reduce((sum, line) => sum + normalizeReceiptQuantity(line.expectedQty), 0)
+    const totalReceived = lines.reduce((sum, line) => sum + normalizeReceiptQuantity(line.receivedQty), 0)
     return {
       lines,
       receivedLines,

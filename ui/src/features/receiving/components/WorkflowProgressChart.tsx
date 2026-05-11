@@ -27,7 +27,7 @@ export function WorkflowProgressChart({ stages, currentStageId, className }: Pro
         {/* Header */}
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
-            Workflow Progress
+            Posted Workflow Progress
           </h3>
           <div className="text-right">
             <div className="text-2xl font-bold text-slate-900">{Math.round(progress)}%</div>

@@ -12,7 +12,10 @@ import {
 import { createTestQueryClient } from '../testUtils'
 
 vi.mock('@shared/auth', () => ({
-  useAuth: () => ({ user: { id: 'user-1', email: 'user@example.com' } }),
+  useAuth: () => ({
+    user: { id: 'user-1', email: 'user@example.com' },
+    hasPermission: () => true,
+  }),
 }))
 vi.mock('@shared', () => ({
   useDebouncedValue: (value: string) => value,

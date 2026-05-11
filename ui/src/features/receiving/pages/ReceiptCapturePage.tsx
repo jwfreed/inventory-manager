@@ -9,6 +9,7 @@ import { ReceivingLayout } from '../components/ReceivingLayout'
 import { useReceivingContext } from '../context'
 import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
+import { formatReceiptQuantitySummary } from '../utils'
 import { useAuth } from '@shared/auth'
 
 const KeyboardShortcutsModal = lazy(() => import('../components/KeyboardShortcutsModal'))
@@ -94,6 +95,14 @@ export default function ReceiptCapturePage() {
     ctx.receiptLineSummary.missingLotSerial.length +
     ctx.receiptLineSummary.overApprovalMissing.length +
     ctx.receiptLineSummary.invalidLines.length
+  const receiptQuantitySummary = formatReceiptQuantitySummary(ctx.receiptLineSummary)
+  const receiptCaptureStatus = posted
+    ? 'posted'
+    : ctx.canPostReceipt
+      ? 'ready to post'
+      : ctx.receiptLineSummary.receivedLines.length > 0
+        ? 'needs review'
+        : 'not ready'
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -233,7 +242,7 @@ export default function ReceiptCapturePage() {
                             )}
                           </span>
                           {!ctx.poQuery.data.shipToLocationCode &&
-                            !ctx.locationOptions.find((loc) => loc.value === ctx.poQuery.data.shipToLocationId) && (
+                            !ctx.locationOptions.find((loc) => loc.value === ctx.poQuery.data?.shipToLocationId) && (
                               <span className="ml-2 text-xs text-slate-500">Data unavailable.</span>
                             )}
                         </div>
@@ -284,6 +293,7 @@ export default function ReceiptCapturePage() {
                         value={ctx.resolvedReceivedToLocationId}
                         onChange={(val) => ctx.setReceivedToLocationId(val)}
                         disabled={ctx.receiptMutation.isPending || posted}
+                        showSelectedValue={false}
                       />
                       <p className="mt-1 text-xs text-slate-500">
                         Receiving location (staging after receipt).
@@ -466,6 +476,38 @@ export default function ReceiptCapturePage() {
                       />
                     )}
 
+                    {/* Summary and Submit */}
+                    <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200 bg-white px-4 py-3 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Receipt capture: {receiptCaptureStatus}
+                          </div>
+                          <div className="font-medium text-slate-900">
+                            {receiptQuantitySummary}
+                          </div>
+                          {ctx.receiptLineSummary.discrepancyLines.length > 0 && (
+                            <span className="text-amber-600">
+                              {' '}
+                              - {ctx.receiptLineSummary.discrepancyLines.length} discrepancies
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Posting as {user?.fullName || user?.email || 'user'} at{' '}
+                          {new Date().toLocaleTimeString()}
+                        </div>
+                        <Button
+                          type="submit"
+                          disabled={!ctx.canPostReceipt || ctx.receiptMutation.isPending || posted}
+                          className="gap-2"
+                        >
+                          {ctx.receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
+                          <KeyboardHint shortcut="Ctrl+S" />
+                        </Button>
+                      </div>
+                    </div>
+
                     {/* Notes */}
                     <div>
                       <label htmlFor="receipt-notes" className="block text-sm font-medium text-slate-700 mb-1">
@@ -479,42 +521,6 @@ export default function ReceiptCapturePage() {
                         rows={3}
                         disabled={ctx.receiptMutation.isPending || posted}
                       />
-                    </div>
-
-                    {/* Summary and Submit */}
-                    <div className="sticky bottom-0 z-10 -mx-4 border-t border-slate-200 bg-white px-4 py-3 shadow-sm">
-                      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-                        <div>
-                          <span className="font-medium">{ctx.receiptLineSummary.totalReceived}</span> of{' '}
-                          <span className="font-medium">{ctx.receiptLineSummary.totalExpected}</span> expected
-                          {ctx.receiptLineSummary.discrepancyLines.length > 0 && (
-                            <span className="text-amber-600">
-                              {' '}
-                              - {ctx.receiptLineSummary.discrepancyLines.length} discrepancies
-                            </span>
-                          )}
-                          {ctx.receiptLineSummary.totalReceived > ctx.receiptLineSummary.totalExpected && (
-                            <span className="text-amber-700"> - Over</span>
-                          )}
-                          {ctx.receiptLineSummary.totalReceived < ctx.receiptLineSummary.totalExpected && (
-                            <span className="text-slate-500"> - Partial</span>
-                          )}
-                          {ctx.receiptLineSummary.totalReceived === ctx.receiptLineSummary.totalExpected && (
-                            <span className="text-emerald-700"> - Complete</span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Posting as {user?.fullName || user?.email || 'user'} at{' '}
-                          {new Date().toLocaleTimeString()}
-                        </div>
-                        <Button
-                          type="submit"
-                          disabled={!ctx.canPostReceipt || ctx.receiptMutation.isPending || posted}
-                        >
-                          {ctx.receiptMutation.isPending ? 'Posting…' : 'Post receipt'}{' '}
-                          <KeyboardHint shortcut="Ctrl+S" />
-                        </Button>
-                      </div>
                     </div>
 
                     {/* Error Message */}
@@ -599,7 +605,7 @@ export default function ReceiptCapturePage() {
           )}
 
           {ctx.selectedPoId && (
-            <Card>
+            <Card className={poReceipts.length === 0 ? 'shadow-none' : undefined}>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold text-slate-900">Receipt history</div>
@@ -608,7 +614,9 @@ export default function ReceiptCapturePage() {
                   </Button>
                 </div>
                 {poReceipts.length === 0 ? (
-                  <div className="text-xs text-slate-500">No receipts posted for this PO yet.</div>
+                  <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                    No receipts posted for this PO yet.
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     {poReceipts.slice(0, 4).map((receipt) => (
@@ -639,24 +647,26 @@ export default function ReceiptCapturePage() {
             stages={[
               {
                 id: 'receipt',
-                label: 'Receipt Capture',
-                complete: false,
+                label: 'Receipt capture',
+                complete: posted,
                 stats: [
                   {
-                    label: 'Lines processed',
-                    value: `${ctx.receiptLineSummary.lines.length} of ${ctx.poQuery.data?.lines?.length ?? 0}`,
+                    label: 'State',
+                    value: receiptCaptureStatus,
                   },
                 ],
               },
               {
                 id: 'qc',
-                label: 'QC Classification',
+                label: 'QC classification',
                 complete: false,
+                stats: [{ label: 'State', value: 'not started' }],
               },
               {
                 id: 'putaway',
-                label: 'Putaway Planning',
+                label: 'Putaway planning',
                 complete: false,
+                stats: [{ label: 'State', value: 'not started' }],
               },
             ]}
           />

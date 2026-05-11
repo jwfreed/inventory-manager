@@ -1,5 +1,56 @@
 import type { PurchaseOrder, PurchaseOrderReceiptLine } from '@api/types'
-import type { ReceiptLineInput } from './types'
+import { formatNumber } from '../../lib/formatters'
+import type { ReceiptLineInput, ReceiptLineSummary } from './types'
+
+const QUANTITY_EPSILON = 1e-6
+
+const toQuantityNumber = (value: unknown): number => {
+  if (value === '' || value === null || value === undefined) return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+export const normalizeReceiptQuantity = toQuantityNumber
+
+export const formatReceiptQuantity = (value: unknown): string => {
+  return formatNumber(toQuantityNumber(value))
+}
+
+export const formatQuantityWithUom = (value: unknown, uom: string): string => {
+  return `${formatReceiptQuantity(value)} ${uom || 'units'}`
+}
+
+export const formatReceiptQuantitySummary = (summary: ReceiptLineSummary): string => {
+  if (summary.lines.length === 0) return 'No receipt lines'
+
+  const groups = new Map<string, { uom: string; expected: number; received: number }>()
+  for (const line of summary.lines) {
+    const uom = line.uom || 'units'
+    const current = groups.get(uom) ?? { uom, expected: 0, received: 0 }
+    current.expected += toQuantityNumber(line.expectedQty)
+    current.received += toQuantityNumber(line.receivedQty)
+    groups.set(uom, current)
+  }
+
+  const totals = [...groups.values()]
+  const hasReceived = totals.some((group) => group.received > 0)
+  const allExpectedReceived =
+    hasReceived &&
+    totals.every((group) => group.expected > 0 && Math.abs(group.received - group.expected) <= QUANTITY_EPSILON)
+
+  if (allExpectedReceived) {
+    return `${totals.map((group) => formatQuantityWithUom(group.received, group.uom)).join(' + ')} ready to post`
+  }
+
+  return totals
+    .map((group) => {
+      if (!hasReceived) {
+        return `0 of ${formatQuantityWithUom(group.expected, group.uom)} received`
+      }
+      return `${formatReceiptQuantity(group.received)} of ${formatQuantityWithUom(group.expected, group.uom)} received`
+    })
+    .join(' · ')
+}
 
 export const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
   return (po.lines ?? []).map((line, idx) => {
@@ -11,8 +62,8 @@ export const buildReceiptLines = (po: PurchaseOrder): ReceiptLineInput[] => {
       lineNumber: line.lineNumber ?? idx + 1,
       itemLabel: label,
       uom: line.uom ?? '',
-      expectedQty: line.quantityOrdered ?? 0,
-      receivedQty: line.quantityOrdered ?? 0,
+      expectedQty: toQuantityNumber(line.quantityOrdered),
+      receivedQty: toQuantityNumber(line.quantityOrdered),
       discrepancyReason: '',
       discrepancyNotes: '',
       lotCode: '',
