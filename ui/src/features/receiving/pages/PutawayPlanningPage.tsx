@@ -26,6 +26,15 @@ export default function PutawayPlanningPage() {
   const isCompleted = putaway?.status === 'completed'
   const hasExistingPutaway = Boolean(ctx.putawayId && ctx.putawayQuery.data)
   const showDraftForm = !isCompleted && (!ctx.putawayId || (ctx.putawayQuery.data && ['draft', 'in_progress'].includes(ctx.putawayQuery.data.status)))
+  const qcIsIncomplete = Boolean(receipt && (ctx.receiptTotals?.remaining > 0 || ctx.receiptTotals?.hold > 0))
+  const putawayBlockedMessage = !receipt
+    ? 'Select an inbound record from the Receiving & QC queue.'
+    : qcIsIncomplete
+      ? 'Complete QC classification and accept inventory before putaway.'
+      : !ctx.putawayHasAvailable
+        ? 'No accepted inventory is available for putaway. Review QC classification.'
+        : 'Putaway prerequisites not met.'
+  const receiptIdForAction = receipt?.id ?? ctx.receiptIdForQc
 
   const summary = useMemo(() => {
     const lines = putaway?.lines ?? []
@@ -287,14 +296,19 @@ export default function PutawayPlanningPage() {
               </div>
               <h3 className="text-lg font-semibold text-slate-900 mb-2">Putaway not available</h3>
               <p className="text-sm text-slate-600 max-w-sm">
-                {!ctx.receiptQuery.data
-                  ? 'Load a receipt and complete QC classification first.'
-                  : ctx.putawayBlockingLine
-                    ? `Line has QC hold with no accepted quantity. Resolve QC before planning putaway.`
-                    : !ctx.putawayHasAvailable
-                      ? 'Complete QC classification and accept inventory before putaway.'
-                      : 'Putaway prerequisites not met.'}
+                {putawayBlockedMessage}
               </p>
+              <div className="mt-4">
+                {receiptIdForAction ? (
+                  <Button type="button" onClick={() => navigate(`/qc/receipts/${receiptIdForAction}`)}>
+                    Continue QC
+                  </Button>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => navigate('/receiving')}>
+                    Back to inbound work
+                  </Button>
+                )}
+              </div>
             </div>
           ) : (
             <div className="space-y-6">

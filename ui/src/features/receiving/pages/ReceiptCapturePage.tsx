@@ -194,9 +194,13 @@ export default function ReceiptCapturePage() {
                 {/* PO Selection */}
                 <div className="rounded-lg border border-slate-200 p-4 space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                      Purchase order
-                    </label>
+                    {posted && ctx.poQuery.data ? (
+                      <div className="block text-sm font-medium text-slate-700 mb-1">Purchase order</div>
+                    ) : (
+                      <label htmlFor="receipt-purchase-order" className="block text-sm font-medium text-slate-700 mb-1">
+                        Purchase order
+                      </label>
+                    )}
                     {posted && ctx.poQuery.data ? (
                       <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                         <div className="font-medium text-slate-900">
@@ -208,6 +212,7 @@ export default function ReceiptCapturePage() {
                       </div>
                     ) : (
                       <select
+                        id="receipt-purchase-order"
                         value={ctx.selectedPoId}
                         onChange={(e) => ctx.handlePoChange(e.target.value)}
                         disabled={ctx.receiptMutation.isPending}
@@ -296,6 +301,25 @@ export default function ReceiptCapturePage() {
                           <div className="text-xs text-slate-500">Staging after receipt.</div>
                         </div>
                       </div>
+                    </div>
+                  )}
+                  {!ctx.selectedPoId && (
+                    <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-3">
+                      <h3 className="text-sm font-semibold text-slate-900">
+                        Select a purchase order to receive
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Select an approved purchase order to begin receipt capture, or return to inbound work.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => navigate('/receiving')}
+                      >
+                        Back to inbound work
+                      </Button>
                     </div>
                   )}
                 </div>

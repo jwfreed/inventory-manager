@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { fireEvent, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { renderWithQueryClient } from '../testUtils'
 import PutawayPlanningPage from '../../features/receiving/pages/PutawayPlanningPage'
@@ -122,6 +122,7 @@ const buildContextValue = (overrides: Record<string, unknown> = {}) => ({
   putawayQuantityIssues: [],
   putawayBlockingLine: undefined,
   putawayHasAvailable: true,
+  receiptTotals: { received: 30000, accepted: 30000, hold: 0, reject: 0, remaining: 0 },
   getErrorMessage: vi.fn((_error: unknown, fallback: string) => fallback),
   setSelectedPoId: vi.fn(),
   setReceiptIdForQc: vi.fn(),
@@ -134,6 +135,31 @@ function renderPage() {
   return renderWithQueryClient(
     <MemoryRouter initialEntries={['/receiving/putaway?receiptId=receipt-1&putawayId=putaway-1']}>
       <PutawayPlanningPage />
+    </MemoryRouter>,
+  )
+}
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname}</div>
+}
+
+function renderPageWithRoutes(initialEntry = '/receiving/putaway?receiptId=receipt-1') {
+  return renderWithQueryClient(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route
+          path="/receiving/putaway"
+          element={
+            <>
+              <PutawayPlanningPage />
+              <LocationProbe />
+            </>
+          }
+        />
+        <Route path="/qc/receipts/:receiptId" element={<LocationProbe />} />
+        <Route path="/receiving" element={<LocationProbe />} />
+      </Routes>
     </MemoryRouter>,
   )
 }
@@ -165,6 +191,7 @@ describe('PutawayPlanningPage workflow completion', () => {
         putawayId: '',
         putawayReady: false,
         putawayHasAvailable: false,
+        receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
         receiptQuery: {
           data: {
             id: 'receipt-1',
@@ -197,5 +224,52 @@ describe('PutawayPlanningPage workflow completion', () => {
 
     expect(screen.getByText('Putaway not available')).toBeInTheDocument()
     expect(screen.getByText('Complete QC classification and accept inventory before putaway.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue QC' })).toBeInTheDocument()
+  })
+
+  it('routes a QC-blocked putaway back to the receipt QC page', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        putawayQuery: {
+          data: null,
+          isLoading: false,
+          isError: false,
+          error: null,
+        },
+        putawayId: '',
+        putawayReady: false,
+        putawayHasAvailable: false,
+        receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
+      }) as any,
+    )
+
+    renderPageWithRoutes()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue QC' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/qc/receipts/receipt-1')
+  })
+
+  it('routes putaway with no receipt context back to inbound work', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        putawayQuery: {
+          data: null,
+          isLoading: false,
+          isError: false,
+          error: null,
+        },
+        putawayId: '',
+        putawayReady: false,
+        putawayHasAvailable: false,
+        receiptQuery: { data: null },
+        receiptTotals: { received: 0, accepted: 0, hold: 0, reject: 0, remaining: 0 },
+      }) as any,
+    )
+
+    renderPageWithRoutes('/receiving/putaway')
+
+    expect(screen.getByText('Select an inbound record from the Receiving & QC queue.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to inbound work' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/receiving')
   })
 })

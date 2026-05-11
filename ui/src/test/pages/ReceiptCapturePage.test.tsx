@@ -250,6 +250,32 @@ describe('ReceiptCapturePage receipt capture display', () => {
     expect(screen.queryByText(receiptId)).not.toBeInTheDocument()
   })
 
+  it('keeps manual PO selection and offers a route back to inbound work when no PO is selected', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        selectedPoId: '',
+        poQuery: { data: null, refetch: vi.fn() },
+        receiptLineInputs: [],
+        receiptLineSummary: buildSummary([]),
+        canPostReceipt: false,
+      }) as any,
+    )
+
+    renderPage()
+
+    expect(screen.getByLabelText('Purchase order')).toBeInTheDocument()
+    expect(screen.getByText('Select a purchase order to receive')).toBeInTheDocument()
+    expect(screen.getByText('Select an approved purchase order to begin receipt capture, or return to inbound work.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to inbound work' })).toBeInTheDocument()
+  })
+
+  it('shows selected PO context for a queue-linked receipt route instead of remaining on Select PO', () => {
+    renderPage()
+
+    expect(screen.getByText('PO PO-MILK-CHOC-1000-INGREDIENTS')).toBeInTheDocument()
+    expect(screen.queryByText('Select PO…')).not.toBeInTheDocument()
+  })
+
   it('distinguishes receipt readiness from posted workflow completion', () => {
     renderPage()
 

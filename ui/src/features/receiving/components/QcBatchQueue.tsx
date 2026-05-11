@@ -75,8 +75,8 @@ export function QcBatchQueue({ receipts, activeReceiptId, onSelectReceipt, isLoa
             <p className="text-xs text-slate-500 mt-0.5">
               {needsAttention > 0 ? (
                 <>
-                  <span className="font-medium text-slate-900">{needsAttention}</span> receipt
-                  {needsAttention !== 1 ? 's' : ''} need attention
+                  <span className="font-medium text-slate-900">{needsAttention}</span>{' '}
+                  {needsAttention === 1 ? 'receipt needs attention' : 'receipts need attention'}
                 </>
               ) : (
                 'All receipts classified'
@@ -213,7 +213,7 @@ export function QcBatchQueue({ receipts, activeReceiptId, onSelectReceipt, isLoa
               }}
               disabled={needsAttention === 0}
             >
-              {needsAttention > 0 ? 'Next Receipt →' : 'All Complete ✓'}
+              {needsAttention > 0 ? 'Load next receipt' : 'All Complete ✓'}
             </Button>
           </div>
         )}

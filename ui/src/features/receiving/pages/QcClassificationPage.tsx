@@ -162,6 +162,26 @@ export default function QcClassificationPage() {
       ]
     : []
 
+  const queueReceipts = ctx.filteredReceipts.length > 0
+    ? ctx.filteredReceipts
+    : (ctx.recentReceiptsQuery.data?.data || [])
+  const pendingQcReceipts = queueReceipts.filter((receipt) => {
+    const lines = receipt.lines || []
+    if (lines.length === 0) return true
+    return lines.some((line) => (line.qcSummary?.remainingUninspectedQuantity ?? line.quantityReceived ?? 0) > 0)
+  })
+  const nextQcReceipt = pendingQcReceipts[0]
+  const pendingQcCount = pendingQcReceipts.length
+  const pendingQcCopy = pendingQcCount === 1
+    ? '1 receipt is waiting for QC classification.'
+    : `${formatNumber(pendingQcCount)} receipts are waiting for QC classification.`
+  const loadNextReceipt = () => {
+    if (!nextQcReceipt) return
+    ctx.loadReceiptForQc(nextQcReceipt.id)
+    navigate(`/qc/receipts/${nextQcReceipt.id}`)
+    if (isMobile) setShowSidebar(false)
+  }
+
   return (
     <ReceivingLayout>
       <div className="flex items-center justify-between mb-4">
@@ -231,10 +251,30 @@ export default function QcClassificationPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">No receipt loaded</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                    {pendingQcCount > 0 ? 'No receipt selected' : 'No receipts need QC right now'}
+                  </h3>
                   <p className="text-sm text-slate-600 max-w-sm">
-                    Select a receipt from the sidebar to classify QC, or post a new receipt.
+                    {pendingQcCount > 0
+                      ? pendingQcCopy
+                      : 'Return to inbound work to receive goods, review posted receipts, or continue putaway.'}
                   </p>
+                  {pendingQcCount > 0 && (
+                    <p className="mt-2 text-sm text-slate-600 max-w-sm">
+                      Load the next receipt to classify accepted, held, or rejected quantities.
+                    </p>
+                  )}
+                  <div className="mt-4">
+                    {pendingQcCount > 0 ? (
+                      <Button type="button" onClick={loadNextReceipt}>
+                        Load next receipt
+                      </Button>
+                    ) : (
+                      <Button type="button" variant="secondary" onClick={() => navigate('/receiving')}>
+                        Back to inbound work
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ) : ctx.receiptQuery.isLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -424,10 +464,11 @@ export default function QcClassificationPage() {
 
           {/* QC Batch Queue */}
           <QcBatchQueue
-            receipts={ctx.filteredReceipts.length > 0 ? ctx.filteredReceipts : (ctx.recentReceiptsQuery.data?.data || [])}
+            receipts={queueReceipts}
             activeReceiptId={ctx.receiptIdForQc}
             onSelectReceipt={(id) => {
               ctx.loadReceiptForQc(id)
+              navigate(`/qc/receipts/${id}`)
               if (isMobile) setShowSidebar(false)
             }}
             isLoading={ctx.recentReceiptsQuery.isLoading}

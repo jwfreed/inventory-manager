@@ -1382,6 +1382,13 @@ export function ReceivingProvider({ children }: Props) {
     }
   }, [receiptIdFromQuery, receiptIdForQc, loadReceiptForQc])
 
+  // Sync URL -> state for PO receipt capture entry points.
+  useEffect(() => {
+    if (poIdFromQuery && poIdFromQuery !== selectedPoId) {
+      handlePoChange(poIdFromQuery)
+    }
+  }, [poIdFromQuery, selectedPoId, handlePoChange])
+
   // Sync URL -> state for putawayId
   useEffect(() => {
     if (putawayIdFromQuery && putawayIdFromQuery !== putawayId) {

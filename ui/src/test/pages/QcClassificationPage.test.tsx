@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
-import { RouterProvider, createMemoryRouter } from 'react-router-dom'
+import { RouterProvider, createMemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { renderWithQueryClient } from '../testUtils'
 import QcClassificationPage from '../../features/receiving/pages/QcClassificationPage'
@@ -45,15 +45,47 @@ import { useReceivingContext } from '../../features/receiving/context'
 
 const mockedUseReceivingContext = vi.mocked(useReceivingContext)
 
-function renderPage() {
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname}</div>
+}
+
+function renderPage(initialEntry = '/receiving/qc/receipt-1') {
   const router = createMemoryRouter(
     [
       {
         path: '/receiving/qc/:receiptId',
-        element: <QcClassificationPage />,
+        element: (
+          <>
+            <QcClassificationPage />
+            <LocationProbe />
+          </>
+        ),
+      },
+      {
+        path: '/receiving/qc',
+        element: (
+          <>
+            <QcClassificationPage />
+            <LocationProbe />
+          </>
+        ),
+      },
+      {
+        path: '/qc/receipts/:receiptId',
+        element: (
+          <>
+            <QcClassificationPage />
+            <LocationProbe />
+          </>
+        ),
+      },
+      {
+        path: '/receiving',
+        element: <LocationProbe />,
       },
     ],
-    { initialEntries: ['/receiving/qc/receipt-1'] },
+    { initialEntries: [initialEntry] },
   )
 
   return renderWithQueryClient(<RouterProvider router={router} />)
@@ -195,5 +227,66 @@ describe('QcClassificationPage keyboard shortcuts', () => {
 
     expect(screen.getByText('QC classification complete')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue to putaway' })).toBeInTheDocument()
+  })
+
+  it('turns the no-receipt state into a next QC action when queue work exists', () => {
+    const loadReceiptForQc = vi.fn()
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        receiptIdForQc: '',
+        selectedQcLineId: '',
+        selectedQcLine: undefined,
+        loadReceiptForQc,
+        recentReceiptsQuery: {
+          data: {
+            data: [
+              {
+                id: 'receipt-next',
+                receiptNumber: 'R-1001',
+                status: 'posted',
+                receivedAt: '2026-05-11T00:00:00Z',
+                lines: [
+                  {
+                    id: 'line-1',
+                    quantityReceived: 30000,
+                    uom: 'g',
+                    qcSummary: {
+                      remainingUninspectedQuantity: 30000,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          isLoading: false,
+        },
+      }) as any,
+    )
+
+    renderPage('/receiving/qc')
+
+    expect(screen.getByText('No receipt selected')).toBeInTheDocument()
+    expect(screen.getByText('1 receipt is waiting for QC classification.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load next receipt' }))
+
+    expect(loadReceiptForQc).toHaveBeenCalledWith('receipt-next')
+    expect(screen.getByTestId('location')).toHaveTextContent('/qc/receipts/receipt-next')
+  })
+
+  it('shows a true no-work QC empty state with a route back to inbound work', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        receiptIdForQc: '',
+        selectedQcLineId: '',
+        selectedQcLine: undefined,
+      }) as any,
+    )
+
+    renderPage('/receiving/qc')
+
+    expect(screen.getByText('No receipts need QC right now')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to inbound work' }))
+    expect(screen.getByTestId('location')).toHaveTextContent('/receiving')
   })
 })
