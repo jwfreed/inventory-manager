@@ -74,6 +74,8 @@ describe('PurchaseOrderDetailPage', () => {
         vendorCode: 'SUP-1',
         vendorName: 'Supplier',
         status: 'approved',
+        orderDate: '2026-01-15',
+        expectedDate: '2026-01-16',
         shipToLocationId: 'loc-1',
         receivingLocationId: 'loc-2',
         lines: [
@@ -159,7 +161,14 @@ describe('PurchaseOrderDetailPage', () => {
         shipToLocationId: 'loc-1',
         receivingLocationId: 'loc-2',
         lines: [
-          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 10, status: 'complete', uom: 'kg' },
+          {
+            id: 'line-1',
+            itemId: 'item-1',
+            quantityOrdered: 10,
+            quantityReceived: 10,
+            status: 'complete',
+            uom: 'kg',
+          },
         ],
       },
       isLoading: false,
@@ -178,7 +187,9 @@ describe('PurchaseOrderDetailPage', () => {
     renderPage()
 
     expect(await screen.findByText('Approved purchase order')).toBeInTheDocument()
-    expect(screen.getByText(/This PO is read-only because it has been approved/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/This PO is read-only because it has been approved/),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Locked')).toBeNull()
   })
 
@@ -244,8 +255,22 @@ describe('PurchaseOrderDetailPage', () => {
         shipToLocationId: 'loc-1',
         receivingLocationId: 'loc-2',
         lines: [
-          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
-          { id: 'line-2', itemId: 'item-2', quantityOrdered: 5, quantityReceived: 5, status: 'complete', uom: 'kg' },
+          {
+            id: 'line-1',
+            itemId: 'item-1',
+            quantityOrdered: 10,
+            quantityReceived: 0,
+            status: 'open',
+            uom: 'kg',
+          },
+          {
+            id: 'line-2',
+            itemId: 'item-2',
+            quantityOrdered: 5,
+            quantityReceived: 5,
+            status: 'complete',
+            uom: 'kg',
+          },
         ],
       },
       isLoading: false,
@@ -272,7 +297,14 @@ describe('PurchaseOrderDetailPage', () => {
         shipToLocationId: 'loc-1',
         receivingLocationId: 'loc-2',
         lines: [
-          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
+          {
+            id: 'line-1',
+            itemId: 'item-1',
+            quantityOrdered: 10,
+            quantityReceived: 0,
+            status: 'open',
+            uom: 'kg',
+          },
         ],
       },
       isLoading: false,
@@ -284,6 +316,7 @@ describe('PurchaseOrderDetailPage', () => {
     renderPage()
 
     expect(await screen.findByRole('button', { name: 'Save draft' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel PO' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Receive items' })).toBeNull()
   })
 
@@ -317,7 +350,9 @@ describe('PurchaseOrderDetailPage', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
     fireEvent.click(await screen.findByRole('button', { name: 'Close PO' }))
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Supplier confirmed closure' } })
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Supplier confirmed closure' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }))
 
     await waitFor(() => {
@@ -336,7 +371,9 @@ describe('PurchaseOrderDetailPage', () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: 'Close PO' }))
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Duplicate close attempt' } })
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Duplicate close attempt' },
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Confirm close' }))
 
     expect(await screen.findByText('Already closed')).toBeInTheDocument()
@@ -360,10 +397,23 @@ describe('PurchaseOrderDetailPage', () => {
 
     const readOnlySection = screen.getByTestId('po-details-readonly')
     expect(readOnlySection).toBeInTheDocument()
+    expect(within(readOnlySection).getByText('PO details')).toBeInTheDocument()
 
     // Should not contain any date inputs, text inputs, or textareas
     expect(readOnlySection.querySelectorAll('input')).toHaveLength(0)
     expect(readOnlySection.querySelectorAll('textarea')).toHaveLength(0)
+  })
+
+  it('approved PO renders read-only dates in an unambiguous format', async () => {
+    renderPage()
+
+    await screen.findByText('PO PO-0001')
+
+    const readOnlySection = screen.getByTestId('po-details-readonly')
+    expect(within(readOnlySection).getByText('Jan 15, 2026')).toBeInTheDocument()
+    expect(within(readOnlySection).getByText('Jan 16, 2026')).toBeInTheDocument()
+    expect(within(readOnlySection).queryByText('15-01-26')).toBeNull()
+    expect(within(readOnlySection).queryByText('16-01-26')).toBeNull()
   })
 
   it('approved PO does not show raw UUID text in details area', async () => {
@@ -400,7 +450,14 @@ describe('PurchaseOrderDetailPage', () => {
         vendorReference: 'DEMO-REF-001',
         notes: 'Test order notes.',
         lines: [
-          { id: 'line-1', itemId: 'item-1', quantityOrdered: 10, quantityReceived: 0, status: 'open', uom: 'kg' },
+          {
+            id: 'line-1',
+            itemId: 'item-1',
+            quantityOrdered: 10,
+            quantityReceived: 0,
+            status: 'open',
+            uom: 'kg',
+          },
         ],
       },
       isLoading: false,
@@ -420,8 +477,11 @@ describe('PurchaseOrderDetailPage', () => {
     expect(screen.getByText('RECV — Receiving Dock')).toBeInTheDocument()
 
     // Operational field labels — scoped to the details section to avoid collision with lines table headers
+    expect(within(readOnly).getByText('PO details')).toBeInTheDocument()
     expect(within(readOnly).getByText('Order date')).toBeInTheDocument()
     expect(within(readOnly).getByText('Expected date')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Jan 15, 2026')).toBeInTheDocument()
+    expect(within(readOnly).getByText('Jan 20, 2026')).toBeInTheDocument()
     expect(within(readOnly).getByText('Ship-to')).toBeInTheDocument()
     expect(within(readOnly).getByText('Receiving')).toBeInTheDocument()
     expect(within(readOnly).getByText('Supplier ref')).toBeInTheDocument()

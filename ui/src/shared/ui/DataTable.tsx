@@ -76,7 +76,7 @@ export function DataTable<T>({
     selectedRowKey ??
     (internalSelectedRowKey && rowKeys.includes(internalSelectedRowKey)
       ? internalSelectedRowKey
-      : rowKeys[0] ?? null)
+      : (rowKeys[0] ?? null))
 
   const selectedIndex = activeSelectedRowKey ? rowKeys.indexOf(activeSelectedRowKey) : -1
 
@@ -102,7 +102,10 @@ export function DataTable<T>({
     if (!keyboardNavigation || rows.length === 0) return
     if (event.defaultPrevented) return
     if (event.currentTarget !== event.target) return
-    if (typeof document !== 'undefined' && Number(document.body.dataset.modalOpenCount ?? '0') > 0) {
+    if (
+      typeof document !== 'undefined' &&
+      Number(document.body.dataset.modalOpenCount ?? '0') > 0
+    ) {
       return
     }
 
@@ -207,7 +210,10 @@ export function DataTable<T>({
         <tbody className="divide-y divide-slate-200 bg-white">
           {rows.length === 0 ? (
             <tr>
-              <td className="px-4 py-6 text-sm text-slate-500" colSpan={columns.length + (rowActions ? 1 : 0)}>
+              <td
+                className="px-4 py-6 text-sm text-slate-500"
+                colSpan={columns.length + (rowActions ? 1 : 0)}
+              >
                 {emptyState ?? emptyMessage}
               </td>
             </tr>
@@ -215,15 +221,19 @@ export function DataTable<T>({
             rows.map((row) => (
               <tr
                 key={rowKey(row)}
-                aria-selected={keyboardNavigation ? activeSelectedRowKey === rowKey(row) : undefined}
+                aria-selected={
+                  keyboardNavigation ? activeSelectedRowKey === rowKey(row) : undefined
+                }
                 className={cn(
                   'h-9 transition-colors hover:bg-slate-50',
                   keyboardNavigation && isKeyboardMode && 'focus-within:bg-slate-50',
                   getRowState?.(row) === 'warning' && 'bg-amber-50/40 hover:bg-amber-50/60',
                   getRowState?.(row) === 'danger' && 'bg-rose-50/40 hover:bg-rose-50/60',
-                  activeSelectedRowKey === rowKey(row) &&
-                    'outline outline-2 -outline-offset-2 outline-brand-300 shadow-[inset_3px_0_0_0_theme(colors.sky.500)]',
-                  activeSelectedRowKey === rowKey(row) &&
+                  keyboardNavigation &&
+                    activeSelectedRowKey === rowKey(row) &&
+                    'shadow-[inset_3px_0_0_0_theme(colors.sky.500)] outline outline-2 -outline-offset-2 outline-brand-300',
+                  keyboardNavigation &&
+                    activeSelectedRowKey === rowKey(row) &&
                     getRowState?.(row) !== 'warning' &&
                     getRowState?.(row) !== 'danger' &&
                     'bg-brand-50/60',

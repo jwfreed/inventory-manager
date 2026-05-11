@@ -1,5 +1,5 @@
 import type { PurchaseOrderLine } from '@api/types'
-import { Button, DataTable } from '@shared/ui'
+import { Badge, Button, DataTable } from '@shared/ui'
 import { formatNumber } from '../../../lib/formatters'
 
 const emptyMessage = 'No lines on this purchase order.'
@@ -35,6 +35,7 @@ export function PurchaseOrderLinesTable({
                 <Button
                   size="sm"
                   variant="secondary"
+                  className="px-2 py-1 text-xs font-medium shadow-none"
                   onClick={() => onCloseLineRequest(row)}
                   disabled={closingLineId === row.id}
                 >
@@ -62,17 +63,20 @@ export function PurchaseOrderLinesTable({
         {
           id: 'qty',
           header: 'Ordered',
-          cell: (row) => row.quantityOrdered != null ? formatNumber(row.quantityOrdered) : '—',
+          cell: (row) => (row.quantityOrdered != null ? formatNumber(row.quantityOrdered) : '—'),
+          align: 'right',
         },
         {
           id: 'received',
           header: 'Received',
-          cell: (row) => row.quantityReceived != null ? formatNumber(row.quantityReceived) : '—',
+          cell: (row) => (row.quantityReceived != null ? formatNumber(row.quantityReceived) : '—'),
+          align: 'right',
         },
         {
           id: 'remaining',
           header: 'Remaining',
           cell: (row) => formatNumber(computeRemaining(row)),
+          align: 'right',
         },
         {
           id: 'uom',
@@ -82,14 +86,19 @@ export function PurchaseOrderLinesTable({
         {
           id: 'status',
           header: 'Status',
-          cell: (row) => row.status ?? 'open',
+          cell: (row) => (
+            <Badge variant={row.status === 'complete' ? 'success' : 'neutral'}>
+              {row.status ?? 'open'}
+            </Badge>
+          ),
         },
         ...(showCostColumns
           ? [
               {
                 id: 'unitPrice',
                 header: 'Unit Price',
-                cell: (row: PurchaseOrderLine) => row.unitPrice ? `$${row.unitPrice.toFixed(2)}` : '—',
+                cell: (row: PurchaseOrderLine) =>
+                  row.unitPrice ? `$${row.unitPrice.toFixed(2)}` : '—',
                 cellClassName: 'font-mono text-right',
               },
               {

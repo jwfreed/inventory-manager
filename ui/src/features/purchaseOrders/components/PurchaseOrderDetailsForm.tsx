@@ -1,5 +1,4 @@
 import { Input, SearchableSelect, Textarea } from '@shared/ui'
-import { formatDate } from '@shared/formatters'
 
 type LocationOption = {
   value: string
@@ -36,6 +35,18 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   )
 }
 
+function formatReadOnlyDate(value: string) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(parsed)
+}
+
 export function PurchaseOrderDetailsForm({
   poNumber,
   orderDate,
@@ -59,10 +70,13 @@ export function PurchaseOrderDetailsForm({
     const shipToLabel = locationOptions.find((o) => o.value === shipToLocationId)?.label ?? ''
     const receivingLabel = locationOptions.find((o) => o.value === receivingLocationId)?.label ?? ''
     return (
-      <div data-testid="po-details-readonly">
-        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-800">
-          <ReadOnlyField label="Order date" value={formatDate(orderDate)} />
-          <ReadOnlyField label="Expected date" value={formatDate(expectedDate)} />
+      <div data-testid="po-details-readonly" className="mt-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          PO details
+        </div>
+        <div className="mt-2 grid gap-3 text-sm text-slate-800 md:grid-cols-2 lg:grid-cols-3">
+          <ReadOnlyField label="Order date" value={formatReadOnlyDate(orderDate)} />
+          <ReadOnlyField label="Expected date" value={formatReadOnlyDate(expectedDate)} />
           <ReadOnlyField label="Ship-to" value={shipToLabel} />
           <ReadOnlyField label="Receiving" value={receivingLabel} />
           {vendorReference && <ReadOnlyField label="Supplier ref" value={vendorReference} />}
@@ -70,7 +84,7 @@ export function PurchaseOrderDetailsForm({
         {notes && (
           <div className="mt-3 space-y-0.5">
             <div className="text-xs uppercase tracking-wide text-slate-500">Notes</div>
-            <div className="text-sm text-slate-900 whitespace-pre-wrap">{notes}</div>
+            <div className="whitespace-pre-wrap text-sm text-slate-900">{notes}</div>
           </div>
         )}
       </div>
@@ -79,7 +93,7 @@ export function PurchaseOrderDetailsForm({
 
   return (
     <div>
-      <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-800">
+      <div className="mt-3 grid gap-3 text-sm text-slate-800 md:grid-cols-2 lg:grid-cols-3">
         <div>
           <div className="text-xs uppercase text-slate-500">PO Number</div>
           <div className="font-semibold">{poNumber}</div>
@@ -132,7 +146,11 @@ export function PurchaseOrderDetailsForm({
       </div>
       <label className="mt-3 block space-y-1 text-sm">
         <span className="text-xs uppercase text-slate-500">Notes</span>
-        <Textarea value={notes} onChange={(e) => onNotesChange(e.target.value)} disabled={isLocked || isBusy} />
+        <Textarea
+          value={notes}
+          onChange={(e) => onNotesChange(e.target.value)}
+          disabled={isLocked || isBusy}
+        />
       </label>
     </div>
   )
