@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import type { ReceiptLineInput } from '../types'
 import { DataTable, Input, Textarea } from '@shared/ui'
 import { cn } from '../../../lib/utils'
+import { formatReceiptQuantity } from '../utils'
 
 type Props = {
   lines: ReceiptLineInput[]
@@ -22,6 +23,14 @@ const isInvalidQuantity = (value: number | '') => {
   if (value === '') return false
   const parsed = Number(value)
   return !Number.isFinite(parsed) || parsed < 0
+}
+
+const splitItemLabel = (label: string) => {
+  const [first, ...rest] = label.split(' — ')
+  if (rest.length === 0) {
+    return { primary: label || 'Item', secondary: '' }
+  }
+  return { primary: rest.join(' — ') || first || 'Item', secondary: first }
 }
 
 export function ReceiptLinesTable({
@@ -139,23 +148,33 @@ export function ReceiptLinesTable({
         {
           id: 'item',
           header: 'Item',
-          cell: (line) => (
-            <div className="space-y-1">
-              <div className="text-sm text-slate-900">{line.itemLabel}</div>
-              {line.requiresQc && (
-                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                  QC required
-                </span>
-              )}
-            </div>
-          ),
+          cell: (line) => {
+            const item = splitItemLabel(line.itemLabel)
+            return (
+              <div className="max-w-[18rem] space-y-1">
+                <div className="truncate text-sm font-medium text-slate-900" title={item.primary}>
+                  {item.primary}
+                </div>
+                {item.secondary && (
+                  <div className="truncate font-mono text-xs text-slate-500" title={item.secondary}>
+                    {item.secondary}
+                  </div>
+                )}
+                {line.requiresQc && (
+                  <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                    QC required
+                  </span>
+                )}
+              </div>
+            )
+          },
         },
         {
           id: 'expected',
           header: 'Expected',
           cell: (line) => (
             <div>
-              <div className="text-sm text-slate-900">{line.expectedQty}</div>
+              <div className="text-sm text-slate-900">{formatReceiptQuantity(line.expectedQty)}</div>
               <div className="text-xs text-slate-500">{line.uom}</div>
             </div>
           ),
@@ -259,7 +278,7 @@ export function ReceiptLinesTable({
             const label = delta > 0 ? 'Over' : 'Short'
             return (
               <div className="text-xs font-semibold text-amber-700">
-                {label} {delta > 0 ? `+${delta}` : delta} {line.uom}
+                {label} {delta > 0 ? '+' : ''}{formatReceiptQuantity(delta)} {line.uom}
               </div>
             )
           },
@@ -272,7 +291,7 @@ export function ReceiptLinesTable({
             const remaining = Math.max(0, (line.expectedQty ?? 0) - receivedQty)
             return (
               <div className="text-sm text-slate-700">
-                {remaining} {line.uom}
+                {formatReceiptQuantity(remaining)} {line.uom}
               </div>
             )
           },

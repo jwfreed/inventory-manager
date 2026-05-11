@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
+import { formatNumber } from '@shared/formatters'
 import { QcDetailPanel } from '../components/QcDetailPanel'
 import { QcBatchQueue } from '../components/QcBatchQueue'
 import { QcMetricsChart } from '../components/QcMetricsChart'
@@ -290,14 +291,21 @@ export default function QcClassificationPage() {
                           >
                             <div>
                               <div className="text-xs text-slate-500">Item</div>
-                              <div className="text-sm font-medium text-slate-900">
-                                {line.itemSku ?? line.itemId ?? 'Item'}
+                              <div className="max-w-[16rem]">
+                                <div className="truncate text-sm font-medium text-slate-900" title={line.itemName || line.itemSku || line.itemId}>
+                                  {line.itemName || line.itemSku || line.itemId || 'Item'}
+                                </div>
+                                {line.itemName && line.itemSku && (
+                                  <div className="truncate font-mono text-xs text-slate-500" title={line.itemSku}>
+                                    {line.itemSku}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div>
                               <div className="text-xs text-slate-500">Received</div>
                               <div className="text-sm font-medium text-slate-900">
-                                {line.quantityReceived} {line.uom}
+                                {formatNumber(line.quantityReceived)} {line.uom}
                               </div>
                             </div>
                             <div>
@@ -305,9 +313,9 @@ export default function QcClassificationPage() {
                               <div className="text-sm">
                                 {line.qcSummary?.breakdown && (
                                   <span className="text-xs">
-                                    ✓{line.qcSummary.breakdown.accept} 
-                                    {line.qcSummary.breakdown.hold > 0 && ` ⚠${line.qcSummary.breakdown.hold}`}
-                                    {line.qcSummary.breakdown.reject > 0 && ` ✗${line.qcSummary.breakdown.reject}`}
+                                    ✓{formatNumber(line.qcSummary.breakdown.accept)} 
+                                    {line.qcSummary.breakdown.hold > 0 && ` ⚠${formatNumber(line.qcSummary.breakdown.hold)}`}
+                                    {line.qcSummary.breakdown.reject > 0 && ` ✗${formatNumber(line.qcSummary.breakdown.reject)}`}
                                   </span>
                                 )}
                               </div>
@@ -315,7 +323,7 @@ export default function QcClassificationPage() {
                             <div>
                               <div className="text-xs text-slate-500">Remaining</div>
                               <div className="text-sm font-medium text-slate-900">
-                                {line.qcSummary?.remainingUninspectedQuantity ?? 0}
+                                {formatNumber(line.qcSummary?.remainingUninspectedQuantity ?? 0)}
                               </div>
                             </div>
                           </div>
@@ -381,7 +389,7 @@ export default function QcClassificationPage() {
                             }
                           }}
                         >
-                          Plan putaway →
+                          Continue to putaway
                         </Button>
                       }
                     />

@@ -11,8 +11,16 @@ import { useResponsive } from '../hooks/useResponsive'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { formatReceiptQuantitySummary } from '../utils'
 import { useAuth } from '@shared/auth'
+import type { PurchaseOrderReceipt } from '@api/types'
 
 const KeyboardShortcutsModal = lazy(() => import('../components/KeyboardShortcutsModal'))
+
+const receiptDisplayLabel = (receipt?: Pick<PurchaseOrderReceipt, 'receiptNumber' | 'externalRef' | 'id'> | null) => {
+  if (!receipt) return 'Receipt posted'
+  if (receipt.receiptNumber) return `Receipt ${receipt.receiptNumber}`
+  if (receipt.externalRef) return `Receipt ${receipt.externalRef}`
+  return 'Receipt posted'
+}
 
 export default function ReceiptCapturePage() {
   const navigate = useNavigate()
@@ -24,7 +32,6 @@ export default function ReceiptCapturePage() {
   const [scanQuery, setScanQuery] = useState('')
   const [focusLineId, setFocusLineId] = useState<string | null>(null)
   const [varianceFilter, setVarianceFilter] = useState<'all' | 'match' | 'short' | 'over' | 'missing'>('all')
-  const posted = ctx.receiptMutation.isSuccess
   const [poVersion, setPoVersion] = useState<string | null>(null)
 
   const formatEntityLabel = (code?: string | null, name?: string | null) => {
@@ -82,6 +89,20 @@ export default function ReceiptCapturePage() {
     const receipts = ctx.recentReceiptsQuery.data?.data ?? []
     return receipts.filter((receipt) => receipt.purchaseOrderId === ctx.selectedPoId)
   }, [ctx.selectedPoId, ctx.recentReceiptsQuery.data])
+  const activePostedReceipt = useMemo(() => {
+    if (ctx.receiptMutation.isSuccess && ctx.receiptMutation.data?.purchaseOrderId === ctx.selectedPoId) {
+      return ctx.receiptMutation.data
+    }
+    if (
+      ctx.receiptQuery.data?.purchaseOrderId === ctx.selectedPoId &&
+      ctx.receiptQuery.data.status !== 'voided'
+    ) {
+      return ctx.receiptQuery.data
+    }
+    return poReceipts.find((receipt) => receipt.status !== 'voided') ?? null
+  }, [ctx.receiptMutation.data, ctx.receiptMutation.isSuccess, ctx.receiptQuery.data, ctx.selectedPoId, poReceipts])
+  const posted = Boolean(activePostedReceipt)
+  const activeReceiptId = activePostedReceipt?.id ?? ctx.receiptMutation.data?.id ?? ctx.receiptIdForQc
 
   const readyLinesCount = ctx.receiptLineSummary.lines.filter(
     (line) => line.receivedQty > 0 && line.delta === 0,
@@ -176,19 +197,37 @@ export default function ReceiptCapturePage() {
                     <label className="block text-sm font-medium text-slate-700 mb-1">
                       Purchase order
                     </label>
-                    <select
-                      value={ctx.selectedPoId}
-                      onChange={(e) => ctx.handlePoChange(e.target.value)}
-                      disabled={ctx.receiptMutation.isPending || posted}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
-                    >
-                      <option value="">Select PO…</option>
-                      {ctx.poOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                    {posted && ctx.poQuery.data ? (
+                      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                        <div className="font-medium text-slate-900">
+                          PO {ctx.poQuery.data.poNumber || 'Unassigned'}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Locked after receipt posting.
+                        </div>
+                      </div>
+                    ) : (
+                      <select
+                        value={ctx.selectedPoId}
+                        onChange={(e) => ctx.handlePoChange(e.target.value)}
+                        disabled={ctx.receiptMutation.isPending}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-50 disabled:text-slate-500"
+                      >
+                        {!ctx.selectedPoId && <option value="">Select PO…</option>}
+                        {ctx.poOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                        {ctx.selectedPoId &&
+                          !ctx.poOptions.some((option) => option.value === ctx.selectedPoId) &&
+                          ctx.poQuery.data && (
+                            <option value={ctx.selectedPoId}>
+                              {ctx.poQuery.data.poNumber ?? ctx.selectedPoId}
+                            </option>
+                          )}
+                      </select>
+                    )}
                   </div>
 
                   {ctx.poQuery.data && (
@@ -512,14 +551,30 @@ export default function ReceiptCapturePage() {
                             {new Date().toLocaleTimeString()}
                           </div>
                         </div>
-                        <Button
-                          type="submit"
-                          disabled={!ctx.canPostReceipt || ctx.receiptMutation.isPending || posted}
-                          className="gap-2"
-                        >
-                          {ctx.receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
-                          <KeyboardHint shortcut="Ctrl+S" />
-                        </Button>
+                        {posted ? (
+                          activeReceiptId ? (
+                            <Button
+                              type="button"
+                              className="gap-2"
+                              onClick={() => navigate(`/qc/receipts/${activeReceiptId}`)}
+                            >
+                              Continue to QC
+                            </Button>
+                          ) : (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                              Receipt posted. Open the QC queue to continue classification.
+                            </div>
+                          )
+                        ) : (
+                          <Button
+                            type="submit"
+                            disabled={!ctx.canPostReceipt || ctx.receiptMutation.isPending}
+                            className="gap-2"
+                          >
+                            {ctx.receiptMutation.isPending ? 'Posting…' : 'Post receipt'}
+                            <KeyboardHint shortcut="Ctrl+S" />
+                          </Button>
+                        )}
                       </div>
                     </div>
 
@@ -547,22 +602,18 @@ export default function ReceiptCapturePage() {
                     {ctx.receiptMutation.isSuccess && (
                       <Alert
                         variant="success"
-                        title="Receipt posted successfully!"
-                        message={`Receipt #${ctx.receiptMutation.data?.id}`}
+                        title="Receipt posted"
+                        message="Receipt capture is complete. Continue to QC classification."
                         action={
                           <Button
                             size="sm"
                             onClick={() => {
                               if (ctx.receiptMutation.data?.id) {
-                                if (qcRequiredCount > 0) {
-                                  navigate(`/qc/receipts/${ctx.receiptMutation.data.id}`)
-                                } else {
-                                  navigate(`/receiving/putaway?receiptId=${ctx.receiptMutation.data.id}`)
-                                }
+                                navigate(`/qc/receipts/${ctx.receiptMutation.data.id}`)
                               }
                             }}
                           >
-                            {qcRequiredCount > 0 ? 'Start QC' : 'Start Putaway'}
+                            Continue to QC
                           </Button>
                         }
                       />
@@ -623,9 +674,11 @@ export default function ReceiptCapturePage() {
                       <div key={receipt.id} className="flex items-center justify-between text-sm">
                         <div>
                           <div className="font-medium text-slate-900">
-                            Receipt posted {formatDate(receipt.receivedAt)}
+                            {receiptDisplayLabel(receipt)}
                           </div>
-                          <div className="text-xs text-slate-500">{receipt.status}</div>
+                          <div className="text-xs text-slate-500">
+                            Posted {formatDate(receipt.receivedAt)} · {receipt.status}
+                          </div>
                         </div>
                         <Button
                           size="sm"
@@ -652,21 +705,35 @@ export default function ReceiptCapturePage() {
                 stats: [
                   {
                     label: 'State',
-                    value: receiptCaptureStatus,
+                    value: `Receipt capture: ${posted ? 'posted' : receiptCaptureStatus}`,
                   },
                 ],
               },
               {
                 id: 'qc',
                 label: 'QC classification',
-                complete: false,
-                stats: [{ label: 'State', value: 'not started' }],
+                complete: ctx.receiptLoaded && !ctx.qcNeedsAttention,
+                stats: [
+                  {
+                    label: 'State',
+                    value: `QC classification: ${
+                      ctx.receiptLoaded && !ctx.qcNeedsAttention ? 'complete' : 'not started'
+                    }`,
+                  },
+                ],
               },
               {
                 id: 'putaway',
                 label: 'Putaway planning',
-                complete: false,
-                stats: [{ label: 'State', value: 'not started' }],
+                complete: ctx.stepper.some((step) => step.key === 'putaway' && step.complete),
+                stats: [
+                  {
+                    label: 'State',
+                    value: `Putaway planning: ${
+                      ctx.stepper.some((step) => step.key === 'putaway' && step.complete) ? 'complete' : 'not started'
+                    }`,
+                  },
+                ],
               },
             ]}
           />

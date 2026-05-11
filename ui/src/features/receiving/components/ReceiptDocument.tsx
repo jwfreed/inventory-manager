@@ -7,6 +7,12 @@ type Props = {
   showQcStatus?: boolean
 }
 
+const getReceiptLabel = (receipt: PurchaseOrderReceipt) => {
+  if (receipt.receiptNumber) return `Receipt ${receipt.receiptNumber}`
+  if (receipt.externalRef) return `Receipt ${receipt.externalRef}`
+  return 'Receipt posted'
+}
+
 export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
   const statusColors: Record<string, string> = {
     draft: 'bg-slate-100 text-slate-700',
@@ -47,7 +53,7 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <h3 className="text-lg font-semibold text-slate-900">
-                  Receipt {receipt.id}
+                  {getReceiptLabel(receipt)}
                 </h3>
                 <Badge className={statusColors[statusKey] || statusColors.posted}>
                   {statusLabels[statusKey] || statusKey}
@@ -58,7 +64,7 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
               </div>
               <div className="text-sm text-slate-500">
                 {receipt.purchaseOrderId && (
-                  <span className="font-mono" title={receipt.purchaseOrderId}>
+                  <span>
                     PO: {receipt.purchaseOrderNumber || receipt.purchaseOrderId}
                   </span>
                 )}
@@ -115,8 +121,15 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
                 id: 'item',
                 header: 'Item',
                 cell: (line) => (
-                  <div>
-                    <div className="text-sm font-medium text-slate-900">{line.itemName || line.itemSku || line.itemId}</div>
+                  <div className="max-w-[18rem]">
+                    <div className="truncate text-sm font-medium text-slate-900" title={line.itemName || line.itemSku || line.itemId}>
+                      {line.itemName || line.itemSku || line.itemId}
+                    </div>
+                    {line.itemName && line.itemSku && (
+                      <div className="truncate font-mono text-xs text-slate-500" title={line.itemSku}>
+                        {line.itemSku}
+                      </div>
+                    )}
                   </div>
                 ),
               },

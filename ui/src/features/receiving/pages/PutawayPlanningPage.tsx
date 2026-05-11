@@ -134,9 +134,9 @@ export default function PutawayPlanningPage() {
                   ✓
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold text-emerald-900">Putaway complete</h3>
+                  <h3 className="text-xl font-semibold text-emerald-900">Inbound workflow complete</h3>
                   <p className="text-sm text-emerald-700">
-                    Inventory has been successfully stored and is now available.
+                    Inbound workflow complete. Accepted inventory has been stored.
                   </p>
                 </div>
               </div>
@@ -292,7 +292,7 @@ export default function PutawayPlanningPage() {
                   : ctx.putawayBlockingLine
                     ? `Line has QC hold with no accepted quantity. Resolve QC before planning putaway.`
                     : !ctx.putawayHasAvailable
-                      ? 'No quantities available for putaway. Complete QC classification to accept inventory.'
+                      ? 'Complete QC classification and accept inventory before putaway.'
                       : 'Putaway prerequisites not met.'}
               </p>
             </div>
@@ -401,7 +401,7 @@ export default function PutawayPlanningPage() {
                     <Alert
                       variant="success"
                       title="Draft putaway created!"
-                      message={`ID: ${ctx.putawayMutation.data?.id}`}
+                      message="Review the putaway lines, then post putaway when storage is complete."
                     />
                   )}
                 </form>
@@ -413,7 +413,9 @@ export default function PutawayPlanningPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-200">
                     <div>
                       <h3 className="text-lg font-semibold text-slate-900">
-                        Putaway #{ctx.putawayQuery.data.id}
+                        {ctx.putawayQuery.data.putawayNumber
+                          ? `Putaway ${ctx.putawayQuery.data.putawayNumber}`
+                          : 'Draft putaway'}
                       </h3>
                       <p className="text-sm text-slate-600">
                         {ctx.putawayQuery.data.lines?.length ?? 0} lines
@@ -459,8 +461,8 @@ export default function PutawayPlanningPage() {
                   {ctx.postPutawayMutation.isSuccess && (
                     <Alert
                       variant="success"
-                      title="Putaway posted successfully!"
-                      message="Inventory has been moved to the specified locations."
+                      title="Inbound workflow complete"
+                      message="Accepted inventory has been moved to the specified storage locations."
                       action={
                         <Button
                           size="sm"

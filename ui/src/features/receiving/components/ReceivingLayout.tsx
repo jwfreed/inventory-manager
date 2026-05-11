@@ -33,6 +33,8 @@ const steps: Step[] = [
   },
 ]
 
+const shortReference = (value: string) => `${value.slice(0, 8)}...`
+
 type Props = {
   children: React.ReactNode
 }
@@ -156,13 +158,13 @@ export function ReceivingLayout({ children }: Props) {
                   {ctx.receiptIdForQc && ctx.receiptQuery.data && (
                     <div className="flex items-center gap-2 text-slate-600">
                       <span>Receipt:</span>
-                      <span className="font-mono">{ctx.receiptQuery.data.id.slice(0, 8)}...</span>
+                      <span>{ctx.receiptQuery.data.receiptNumber || 'posted'}</span>
                     </div>
                   )}
                   {ctx.putawayId && ctx.putawayQuery.data && (
                     <div className="flex items-center gap-2 text-slate-600">
                       <span>Putaway:</span>
-                      <span className="font-mono">{ctx.putawayQuery.data.id.slice(0, 8)}...</span>
+                      <span>{ctx.putawayQuery.data.putawayNumber || shortReference(ctx.putawayQuery.data.id)}</span>
                     </div>
                   )}
                 </div>
@@ -246,13 +248,17 @@ export function ReceivingLayout({ children }: Props) {
                   {ctx.receiptIdForQc && ctx.receiptQuery.data && (
                     <div className="flex items-center gap-2">
                       <span className="text-slate-500">Receipt:</span>
-                      <span className="font-mono text-slate-900">{ctx.receiptQuery.data.id}</span>
+                      <span className="text-slate-900">
+                        {ctx.receiptQuery.data.receiptNumber || 'posted'}
+                      </span>
                     </div>
                   )}
                   {ctx.putawayId && ctx.putawayQuery.data && (
                     <div className="flex items-center gap-2">
                       <span className="text-slate-500">Putaway:</span>
-                      <span className="font-mono text-slate-900">{ctx.putawayQuery.data.id}</span>
+                      <span className="text-slate-900">
+                        {ctx.putawayQuery.data.putawayNumber || shortReference(ctx.putawayQuery.data.id)}
+                      </span>
                     </div>
                   )}
                 </div>

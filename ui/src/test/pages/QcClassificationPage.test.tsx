@@ -172,4 +172,28 @@ describe('QcClassificationPage keyboard shortcuts', () => {
     expect(ctx.onSubmitQcShortcutEvent).not.toHaveBeenCalled()
     expect(promptSpy).not.toHaveBeenCalled()
   })
+
+  it('guides completed QC to putaway using the real putaway route', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        receiptQuery: {
+          data: {
+            id: 'receipt-1',
+            status: 'posted',
+            receivedAt: '2026-05-11T00:00:00Z',
+            lines: [],
+          },
+          isLoading: false,
+          isError: false,
+          error: null,
+        },
+        receiptTotals: { received: 5, accepted: 5, hold: 0, reject: 0, remaining: 0 },
+      }) as any,
+    )
+
+    renderPage()
+
+    expect(screen.getByText('QC classification complete')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue to putaway' })).toBeInTheDocument()
+  })
 })

@@ -122,6 +122,16 @@ const buildContextValue = (overrides: Record<string, unknown> = {}) => ({
     reset: vi.fn(),
   },
   canPostReceipt: true,
+  receiptPostedForSelectedPo: false,
+  receiptIdForQc: '',
+  receiptLoaded: false,
+  qcNeedsAttention: true,
+  receiptQuery: { data: null },
+  stepper: [
+    { key: 'receipt', label: 'Confirm receipt', complete: false, blocked: null },
+    { key: 'qc', label: 'QC classification', complete: false, blocked: null },
+    { key: 'putaway', label: 'Putaway', complete: false, blocked: null },
+  ],
   resolvedReceivedToLocationId: locationId,
   setReceivedToLocationId: vi.fn(),
   locationOptions: [{ value: locationId, label: 'MAIN — Main Warehouse' }],
@@ -193,6 +203,51 @@ describe('ReceiptCapturePage receipt capture display', () => {
     renderPage()
 
     expect(screen.getByRole('button', { name: /Post receipt/i })).toBeDisabled()
+    expect(screen.getByText(/Quantities must be valid numbers 0 or greater/i)).toBeInTheDocument()
+  })
+
+  it('guides a posted receipt to QC instead of keeping Post receipt primary', () => {
+    const receiptId = '123e4567-e89b-12d3-a456-426614174000'
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        canPostReceipt: false,
+        receiptIdForQc: receiptId,
+        receiptLoaded: true,
+        receiptPostedForSelectedPo: true,
+        receiptQuery: {
+          data: {
+            id: receiptId,
+            receiptNumber: 'R-1001',
+            purchaseOrderId: 'po-1',
+            status: 'posted',
+            receivedAt: '2026-05-11T00:00:00Z',
+            lines: [],
+          },
+        },
+        recentReceiptsQuery: {
+          data: {
+            data: [
+              {
+                id: receiptId,
+                receiptNumber: 'R-1001',
+                purchaseOrderId: 'po-1',
+                status: 'posted',
+                receivedAt: '2026-05-11T00:00:00Z',
+              },
+            ],
+          },
+        },
+      }) as any,
+    )
+
+    renderPage()
+
+    expect(screen.queryByRole('button', { name: /Post receipt/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continue to QC' })).toBeInTheDocument()
+    expect(screen.getAllByText(/Receipt capture: posted/i).length).toBeGreaterThan(0)
+    expect(screen.getByText('Locked after receipt posting.')).toBeInTheDocument()
+    expect(screen.queryByText('Select PO…')).not.toBeInTheDocument()
+    expect(screen.queryByText(receiptId)).not.toBeInTheDocument()
   })
 
   it('distinguishes receipt readiness from posted workflow completion', () => {
@@ -202,7 +257,17 @@ describe('ReceiptCapturePage receipt capture display', () => {
     expect(screen.getAllByText(/Receipt capture: ready to post/i).length).toBeGreaterThan(0)
     expect(screen.getByText('QC classification')).toBeInTheDocument()
     expect(screen.getByText('Putaway planning')).toBeInTheDocument()
-    expect(screen.getAllByText('not started').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('QC classification: not started')).toBeInTheDocument()
+    expect(screen.getByText('Putaway planning: not started')).toBeInTheDocument()
+  })
+
+  it('renders receipt lines with item name primary, SKU secondary, and formatted quantities', () => {
+    renderPage()
+
+    expect(screen.getByText('Cocoa powder')).toBeInTheDocument()
+    expect(screen.getByText('COCOA')).toBeInTheDocument()
+    expect(screen.getAllByText('30,000').length).toBeGreaterThan(0)
+    expect(screen.queryByText('30000')).not.toBeInTheDocument()
   })
 
   it('keeps empty receipt history visible but compact', () => {
