@@ -18,6 +18,8 @@ type Column<T> = {
   mobileLabel?: string
   headerClassName?: string
   cellClassName?: string
+  /** Hide this column below the given Tailwind breakpoint (e.g. 'sm' → hidden on xs, visible from sm up) */
+  hideBelow?: 'sm' | 'md' | 'lg'
 }
 
 type Props<T> = {
@@ -193,6 +195,9 @@ export function DataTable<T>({
                   className={cn(
                     'px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500',
                     alignClass,
+                    column.hideBelow === 'sm' && 'hidden sm:table-cell',
+                    column.hideBelow === 'md' && 'hidden md:table-cell',
+                    column.hideBelow === 'lg' && 'hidden lg:table-cell',
                     column.headerClassName,
                   )}
                 >
@@ -260,6 +265,9 @@ export function DataTable<T>({
                         column.truncate && 'max-w-[280px] truncate',
                         column.priority === 'primary' && 'font-medium text-slate-900',
                         column.priority === 'anomaly' && 'text-rose-700',
+                        column.hideBelow === 'sm' && 'hidden sm:table-cell',
+                        column.hideBelow === 'md' && 'hidden md:table-cell',
+                        column.hideBelow === 'lg' && 'hidden lg:table-cell',
                         column.cellClassName,
                       )}
                     >

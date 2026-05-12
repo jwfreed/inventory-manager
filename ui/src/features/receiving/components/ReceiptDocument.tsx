@@ -1,6 +1,7 @@
 import { Badge, Card, DataTable } from '@shared/ui'
 import { formatDate, formatNumber } from '@shared/formatters'
 import type { PurchaseOrderReceipt, PurchaseOrderReceiptLine } from '@api/types'
+import { getQcStatus } from '../utils'
 
 type Props = {
   receipt: PurchaseOrderReceipt
@@ -138,6 +139,7 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
                 header: 'Ordered',
                 cell: (line) => formatNumber(line.expectedQuantity || 0),
                 align: 'right' as const,
+                hideBelow: 'sm' as const,
               },
               {
                 id: 'received',
@@ -169,6 +171,7 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
                   )
                 },
                 align: 'right' as const,
+                hideBelow: 'sm' as const,
               },
               ...(showQcStatus
                 ? [
@@ -176,14 +179,8 @@ export function ReceiptDocument({ receipt, showQcStatus = false }: Props) {
                       id: 'qc',
                       header: 'QC Status',
                       cell: (line: PurchaseOrderReceiptLine) => {
-                        const summary = line.qcSummary
-                        if (!summary) {
-                          return <Badge className="bg-slate-100 text-slate-600">Pending</Badge>
-                        }
-                        if (summary.remainingUninspectedQuantity === 0) {
-                          return <Badge className="bg-green-100 text-green-700">Complete</Badge>
-                        }
-                        return <Badge className="bg-blue-100 text-blue-700">In Progress</Badge>
+                        const status = getQcStatus(line)
+                        return <Badge variant={status.variant}>{status.label}</Badge>
                       },
                     },
                   ]

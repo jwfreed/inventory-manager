@@ -92,7 +92,7 @@ export const getQcBreakdown = (line: PurchaseOrderReceiptLine) => {
 }
 
 export const getQcStatus = (line: PurchaseOrderReceiptLine) => {
-  const { hold, totalQc, remaining } = getQcBreakdown(line)
+  const { accept, hold, reject, totalQc, remaining } = getQcBreakdown(line)
   if (totalQc === 0) {
     return { label: 'QC not started', variant: 'neutral' as const }
   }
@@ -102,5 +102,15 @@ export const getQcStatus = (line: PurchaseOrderReceiptLine) => {
   if (hold > 0) {
     return { label: 'Hold unresolved', variant: 'warning' as const }
   }
-  return { label: 'QC complete', variant: 'success' as const }
+  // All inspected with no hold and no remaining — determine accepted/rejected split.
+  if (accept === 0 && reject > 0) {
+    // Every unit was rejected; nothing accepted. Make this unambiguously visible.
+    return { label: 'Fully rejected', variant: 'danger' as const }
+  }
+  if (reject > 0) {
+    // Mixed result: some accepted, some rejected.
+    return { label: 'Accepted with rejects', variant: 'warning' as const }
+  }
+  // All units accepted — explicitly say so.
+  return { label: 'Accepted', variant: 'success' as const }
 }
