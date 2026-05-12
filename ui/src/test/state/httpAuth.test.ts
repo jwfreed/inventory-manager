@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { apiGet } from '../../api/http'
+import { apiGet, apiPost } from '../../api/http'
 import { clearAuthSession, getAuthState, setAuthenticatedSession } from '../../lib/authStore'
 
 const session = {
@@ -157,5 +157,65 @@ describe('http auth coordination', () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/auth/refresh'))).toHaveLength(1)
     expect(getAuthState().status).toBe('authenticated')
     expect(getAuthState().accessToken).toBe('fresh-token')
+  })
+
+  it('preserves Authorization header when extra request headers (e.g. Idempotency-Key) are present', async () => {
+    setAuthenticatedSession({ ...session, accessToken: 'valid-token' }, { broadcast: false })
+
+    let capturedAuth: string | undefined
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedAuth = readAuthorization(init)
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiPost('/qc-events', { type: 'accept', quantity: 100 }, {
+      headers: { 'Idempotency-Key': 'qc-event:accept:line-1:receipt-1' },
+    })
+
+    expect(capturedAuth).toBe('Bearer valid-token')
+  })
+
+  it('preserves Authorization header on retry when extra request headers are present', async () => {
+    setAuthenticatedSession({ ...session, accessToken: 'stale-token' }, { broadcast: false })
+
+    const capturedAuthHeaders: string[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const authHeader = readAuthorization(init)
+
+      if (url.endsWith('/auth/refresh')) {
+        return new Response(JSON.stringify(session), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      capturedAuthHeaders.push(authHeader)
+      if (authHeader === 'Bearer stale-token') {
+        return new Response(JSON.stringify({ error: 'expired' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiPost('/qc-events', { type: 'accept', quantity: 100 }, {
+      headers: { 'Idempotency-Key': 'qc-event:accept:line-1:receipt-1' },
+    })
+
+    // Initial call used stale token; retry used fresh token from refresh
+    expect(capturedAuthHeaders[0]).toBe('Bearer stale-token')
+    expect(capturedAuthHeaders[1]).toBe('Bearer fresh-token')
   })
 })

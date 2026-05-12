@@ -121,9 +121,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   try {
     const body = options.rawBody ?? options.body
     response = await fetch(url.toString(), {
-      headers,
       credentials: 'include',
       ...options,
+      headers,
       body,
     })
   } catch (err) {
@@ -145,9 +145,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       }
       const body = options.rawBody ?? options.body
       response = await fetch(url.toString(), {
-        headers: retryHeaders,
         credentials: 'include',
         ...options,
+        headers: retryHeaders,
         body,
       })
     } else {
