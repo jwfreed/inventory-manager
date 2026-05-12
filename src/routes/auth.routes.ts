@@ -5,17 +5,13 @@ import { query, withTransaction } from '../db';
 import { buildRefreshToken, hashPassword, hashToken, refreshCookieOptions, signAccessToken, verifyPassword } from '../lib/auth';
 import { requireAuth } from '../middleware/auth.middleware';
 import { rolePermissions, type Role } from '../config/permissions';
+import { isTrustedHttpOrigin, resolveAllowedHttpOrigins } from '../config/httpOrigins';
 
 const router = Router();
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 10;
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-const configuredAuthOrigins = new Set(
-  String(process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean)
-);
+const configuredAuthOrigins = resolveAllowedHttpOrigins();
 
 const loginSchema = z.object({
   email: z.preprocess(
@@ -78,7 +74,7 @@ function isTrustedAuthOrigin(req: Request) {
   const origin = getRequestOrigin(req);
   if (!origin) return true;
   const requestOrigin = `${req.protocol}://${req.get('host')}`.toLowerCase();
-  return origin === requestOrigin || configuredAuthOrigins.has(origin);
+  return isTrustedHttpOrigin(origin, requestOrigin, configuredAuthOrigins);
 }
 
 function consumeLoginAttempt(email: string, ip: string) {

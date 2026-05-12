@@ -74,13 +74,11 @@ import {
 } from './config/warehouseDefaultsStartup';
 import { resolveSchedulerStartupMode } from './config/schedulerStartup';
 import { emitAtpRetryBudgetsEffectiveLogOnce, resolveAtpRetryBudgets } from './config/atpRetryBudgets';
+import { resolveAllowedHttpOrigins, resolveCorsAllowedOrigin } from './config/httpOrigins';
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = String(process.env.HOST ?? '0.0.0.0').trim() || '0.0.0.0';
-const CORS_ORIGINS = (process.env.CORS_ORIGIN ?? process.env.CORS_ORIGINS ?? '')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
+const CORS_ORIGINS = resolveAllowedHttpOrigins();
 let httpServer: Server | null = null;
 let isShuttingDown = false;
 
@@ -120,12 +118,7 @@ app.use((req, res, next) => {
     return next();
   }
 
-  const allowOrigin =
-    CORS_ORIGINS.length === 0
-      ? origin
-      : CORS_ORIGINS.includes(origin)
-        ? origin
-        : null;
+  const allowOrigin = resolveCorsAllowedOrigin(origin, CORS_ORIGINS);
 
   if (allowOrigin) {
     res.setHeader('Access-Control-Allow-Origin', allowOrigin);
