@@ -16,9 +16,25 @@ function parseOriginList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function dedupePreservingOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    result.push(value);
+  }
+
+  return result;
+}
+
 export function resolveAllowedHttpOrigins(options: HttpOriginOptions = {}): string[] {
   const env = options.env ?? process.env;
-  const configured = parseOriginList(env.CORS_ORIGIN ?? env.CORS_ORIGINS);
+  const configured = dedupePreservingOrder([
+    ...parseOriginList(env.CORS_ORIGIN),
+    ...parseOriginList(env.CORS_ORIGINS)
+  ]);
   if (configured.length > 0) return configured;
 
   const nodeEnv = String(env.NODE_ENV ?? 'development').trim().toLowerCase();

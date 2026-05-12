@@ -53,3 +53,24 @@ test('configured CORS origins are shared by CORS and auth origin checks', () => 
     true
   );
 });
+
+test('CORS_ORIGIN and CORS_ORIGINS merge with duplicates removed in first-seen order', () => {
+  const allowedOrigins = resolveAllowedHttpOrigins({
+    env: {
+      NODE_ENV: 'production',
+      CORS_ORIGIN: 'https://app.example.test, https://ops.example.test',
+      CORS_ORIGINS: ' https://ops.example.test, https://admin.example.test, https://app.example.test '
+    }
+  });
+
+  assert.deepEqual(allowedOrigins, [
+    'https://app.example.test',
+    'https://ops.example.test',
+    'https://admin.example.test'
+  ]);
+  assert.equal(resolveCorsAllowedOrigin('https://admin.example.test', allowedOrigins), 'https://admin.example.test');
+  assert.equal(
+    isTrustedHttpOrigin('https://admin.example.test', 'https://api.example.test', allowedOrigins),
+    true
+  );
+});
