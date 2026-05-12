@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Alert, Button, Card, LoadingSpinner, Section } from '@shared/ui'
+import { Alert, Badge, Button, Card, LoadingSpinner, Section } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
+import { getQcStatus } from '../utils'
 import { QcDetailPanel } from '../components/QcDetailPanel'
 import { QcBatchQueue } from '../components/QcBatchQueue'
 import { QcMetricsChart } from '../components/QcMetricsChart'
@@ -152,6 +153,7 @@ export default function QcClassificationPage() {
           onBulkHold: () => handleBulkAction('bulk-hold'),
           onBulkReject: () => handleBulkAction('bulk-reject'),
           isProcessing: false,
+          selectedCount: ctx.selectedQcLineIds.size,
         }),
         {
           id: 'bulk-select-all',
@@ -304,13 +306,13 @@ export default function QcClassificationPage() {
                         )}
                       </h4>
                       {ctx.filteredReceiptLines.length > 0 && (
-                        <Button
-                          variant="secondary"
-                          size="sm"
+                        <button
+                          type="button"
                           onClick={ctx.selectAllQcLines}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
                         >
-                          Select All ({ctx.filteredReceiptLines.length})
-                        </Button>
+                          Select all ({ctx.filteredReceiptLines.length})
+                        </button>
                       )}
                     </div>
                     <div className="space-y-2">
@@ -355,14 +357,11 @@ export default function QcClassificationPage() {
                             </div>
                             <div>
                               <div className="text-xs text-slate-500">QC Status</div>
-                              <div className="text-sm">
-                                {line.qcSummary?.breakdown && (
-                                  <span className="text-xs">
-                                    ✓{formatNumber(line.qcSummary.breakdown.accept)} 
-                                    {line.qcSummary.breakdown.hold > 0 && ` ⚠${formatNumber(line.qcSummary.breakdown.hold)}`}
-                                    {line.qcSummary.breakdown.reject > 0 && ` ✗${formatNumber(line.qcSummary.breakdown.reject)}`}
-                                  </span>
-                                )}
+                              <div className="mt-1">
+                                {(() => {
+                                  const status = getQcStatus(line)
+                                  return <Badge variant={status.variant}>{status.label}</Badge>
+                                })()}
                               </div>
                             </div>
                             <div>
@@ -460,7 +459,7 @@ export default function QcClassificationPage() {
         </div>
 
         {/* Sidebar */}
-        <aside className={`space-y-6 ${isMobile && !showSidebar ? 'hidden' : 'block'}`}>
+        <aside className={`space-y-6 ${isMobile && !showSidebar ? 'hidden' : 'block'} ${!isMobile ? 'self-start sticky top-4' : ''}`}>
           {/* Mobile: Back to Content Button */}
           {isMobile && showSidebar && (
             <button

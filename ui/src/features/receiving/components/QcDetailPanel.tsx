@@ -143,7 +143,7 @@ export function QcDetailPanel({
               onClick={onQuickAccept}
               disabled={qcRemaining <= 0 || mutationPending}
             >
-              Accept All <KeyboardHint shortcut="A" />
+              Accept Remaining ({qcRemaining} {line.uom}) <KeyboardHint shortcut="A" />
             </Button>
           </div>
         </div>

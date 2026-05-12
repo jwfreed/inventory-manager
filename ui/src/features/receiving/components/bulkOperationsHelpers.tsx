@@ -30,6 +30,7 @@ export type BulkAction = {
   variant: 'primary' | 'secondary' | 'danger'
   onClick: () => void
   disabled?: boolean
+  className?: string
 }
 
 export function createQcBulkActions(handlers: {
@@ -37,11 +38,13 @@ export function createQcBulkActions(handlers: {
   onBulkHold: () => void
   onBulkReject: () => void
   isProcessing: boolean
+  selectedCount: number
 }): BulkAction[] {
+  const count = handlers.selectedCount
   return [
     {
       id: 'accept',
-      label: 'Accept Selected',
+      label: `Accept Selected Lines (${count})`,
       icon: BulkActionIcons.accept,
       variant: 'primary' as const,
       onClick: handlers.onBulkAccept,
@@ -49,7 +52,7 @@ export function createQcBulkActions(handlers: {
     },
     {
       id: 'hold',
-      label: 'Hold Selected',
+      label: `Hold Selected (${count})`,
       icon: BulkActionIcons.hold,
       variant: 'secondary' as const,
       onClick: handlers.onBulkHold,
@@ -57,11 +60,12 @@ export function createQcBulkActions(handlers: {
     },
     {
       id: 'reject',
-      label: 'Reject Selected',
+      label: `Reject Selected (${count})`,
       icon: BulkActionIcons.reject,
-      variant: 'danger' as const,
+      variant: 'secondary' as const,
       onClick: handlers.onBulkReject,
       disabled: handlers.isProcessing,
+      className: 'border-rose-300 text-rose-700 hover:bg-rose-50 focus-visible:outline-rose-500',
     },
   ]
 }

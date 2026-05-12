@@ -9,6 +9,7 @@ type BulkAction = {
   variant: 'primary' | 'secondary' | 'danger'
   disabled?: boolean
   confirmMessage?: string
+  className?: string
 }
 
 type Props = {
@@ -75,7 +76,7 @@ export function BulkOperationsBar({
               size="sm"
               onClick={() => handleAction(action)}
               disabled={action.disabled || isProcessing}
-              className="flex-shrink-0"
+              className={`flex-shrink-0${action.className ? ` ${action.className}` : ''}`}
             >
               <span className="mr-1.5">{action.icon}</span>
               <span className="hidden sm:inline">{action.label}</span>

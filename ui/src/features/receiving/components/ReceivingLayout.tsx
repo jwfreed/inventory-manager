@@ -53,8 +53,15 @@ export function ReceivingLayout({ children }: Props) {
     { key: '3', handler: () => navigate('/receiving/putaway') },
   ])
 
-  const currentStepIndex = steps.findIndex((s) => location.pathname === s.path)
-  const currentStep = steps[currentStepIndex]
+  const currentStepIndex = (() => {
+    // Exact match first
+    const exact = steps.findIndex((s) => location.pathname === s.path)
+    if (exact !== -1) return exact
+    // Route aliases: /qc/receipts/... maps to the QC step (index 1)
+    if (location.pathname.startsWith('/qc/receipts')) return 1
+    return -1
+  })()
+  const currentStep = currentStepIndex !== -1 ? steps[currentStepIndex] : undefined
 
   const getStepStatus = (index: number): 'completed' | 'active' | 'upcoming' => {
     if (index < currentStepIndex) return 'completed'
