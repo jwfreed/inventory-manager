@@ -385,7 +385,7 @@ export async function createPurchaseOrderReceipt(
       }
 
       const { rows: poLineRows } = await client.query(
-        `SELECT pol.id, pol.purchase_order_id, pol.item_id, pol.uom, pol.quantity_ordered, pol.unit_price,
+        `SELECT pol.id, pol.purchase_order_id, pol.item_id, pol.uom, pol.quantity_ordered, pol.unit_cost, pol.unit_price,
                 pol.status AS line_status,
                 pol.over_receipt_tolerance_pct,
                 i.requires_lot, i.requires_serial, i.requires_qc
@@ -407,6 +407,7 @@ export async function createPurchaseOrderReceipt(
           item_id: row.item_id,
           uom: row.uom,
           quantity_ordered: roundQuantity(toNumber(row.quantity_ordered ?? 0)),
+          unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
           unit_price: row.unit_price != null ? Number(row.unit_price) : null,
           line_status: String(row.line_status ?? 'open'),
           over_receipt_tolerance_pct: row.over_receipt_tolerance_pct != null ? Number(row.over_receipt_tolerance_pct) : 0,
@@ -514,7 +515,7 @@ export async function createPurchaseOrderReceipt(
         const receivedQty = line.quantityReceived;
         const poLine = poLineMap.get(line.purchaseOrderLineId);
         const expectedQty = roundQuantity(toNumber(poLine?.quantity_ordered ?? 0));
-        const unitCost = line.unitCost ?? (poLine?.unit_price ?? null);
+        const unitCost = line.unitCost ?? poLine?.unit_cost ?? poLine?.unit_price ?? null;
         if (!poLine?.item_id) {
           throw new Error('RECEIPT_LINE_ITEM_REQUIRED');
         }
