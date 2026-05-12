@@ -20,6 +20,7 @@ export type ReceiptPurchaseOrderLineSnapshot = {
   item_id: string;
   uom: string;
   quantity_ordered: number;
+  unit_cost: number | null;
   unit_price: number | null;
   line_status: string;
   over_receipt_tolerance_pct: number;

@@ -15,6 +15,7 @@ const PACK_LAYER_SPECS = [
 
 const FACTORY_CODE = 'FACTORY';
 const SEED_VENDOR_NAME = 'Seed Vendor Siamaya Factory';
+const SEED_CURRENCY_CODE = 'THB';
 const PARTIAL_SHORTFALL_BY_CATEGORY: Record<SeedItemCategory, number> = {
   raw: 5,
   pack: 100
@@ -38,6 +39,8 @@ type PurchaseOrderLineSnapshot = {
   itemId: string;
   uom: string;
   quantityOrdered: number;
+  unitCost: number | null;
+  currencyCode: string | null;
   status: string;
 };
 
@@ -69,6 +72,7 @@ type PurchaseOrderPlan = {
   poNumber: string;
   item: SelectedItem;
   quantityOrdered: number;
+  unitCost: number;
   orderDate: string;
   expectedDate: string;
   receiptLines: ReceiptLinePlan[];
@@ -393,7 +397,16 @@ function mapPurchaseOrderSnapshot(data: unknown): PurchaseOrderSnapshot {
     id?: string;
     status?: string;
     vendorReference?: string | null;
-    lines?: Array<{ id?: string; itemId?: string; uom?: string; quantityOrdered?: number; status?: string }>;
+    lines?: Array<{
+      id?: string;
+      itemId?: string;
+      uom?: string;
+      quantityOrdered?: number;
+      unitCost?: number | string | null;
+      unitPrice?: number | string | null;
+      currencyCode?: string | null;
+      status?: string;
+    }>;
   };
   return {
     id: String(row.id ?? ''),
@@ -405,6 +418,13 @@ function mapPurchaseOrderSnapshot(data: unknown): PurchaseOrderSnapshot {
         itemId: String(line.itemId ?? ''),
         uom: normalizeUom(line.uom),
         quantityOrdered: Number(line.quantityOrdered ?? 0),
+        unitCost:
+          line.unitCost !== null && line.unitCost !== undefined
+            ? Number(line.unitCost)
+            : line.unitPrice !== null && line.unitPrice !== undefined
+              ? Number(line.unitPrice)
+              : null,
+        currencyCode: line.currencyCode ?? null,
         status: String(line.status ?? 'open')
       }))
       : []
@@ -439,6 +459,17 @@ function assertPurchaseOrderMatchesPlan(
     throw new Error(
       `SEED_RECEIPTS_PO_LINE_QTY_MISMATCH itemId=${plan.item.itemId} expected=${plan.quantityOrdered} actual=${line.quantityOrdered}`
     );
+  }
+  if (line.unitCost === null || !Number.isFinite(line.unitCost) || line.unitCost <= 0) {
+    throw new Error(`SEED_RECEIPTS_PO_LINE_UNIT_COST_REQUIRED itemId=${plan.item.itemId}`);
+  }
+  if (Math.abs(line.unitCost - plan.unitCost) > 1e-6) {
+    throw new Error(
+      `SEED_RECEIPTS_PO_LINE_UNIT_COST_MISMATCH itemId=${plan.item.itemId} expected=${plan.unitCost} actual=${line.unitCost}`
+    );
+  }
+  if ((line.currencyCode ?? '').toUpperCase() !== SEED_CURRENCY_CODE) {
+    throw new Error(`SEED_RECEIPTS_PO_LINE_CURRENCY_REQUIRED itemId=${plan.item.itemId}`);
   }
   return {
     lineId: line.id,
@@ -485,7 +516,9 @@ async function ensurePurchaseOrderForPlan(
           lineNumber: 1,
           itemId: args.plan.item.itemId,
           uom: args.plan.item.uom,
-          quantityOrdered: args.plan.quantityOrdered
+          quantityOrdered: args.plan.quantityOrdered,
+          unitCost: args.plan.unitCost,
+          currencyCode: SEED_CURRENCY_CODE
         }
       ]
     }
@@ -539,6 +572,7 @@ function buildPurchaseOrderPlans(
             poNumber: buildPoNumber(tenantSlug, vendorReference),
             item,
             quantityOrdered: layer.quantity,
+            unitCost: layer.unitCost,
             orderDate: toDateOnly(layer.receivedAt),
             expectedDate: toDateOnly(layer.receivedAt),
             receiptLines: [
@@ -557,6 +591,8 @@ function buildPurchaseOrderPlans(
       }
 
       const totalLayerQty = group.layers.reduce((sum, layer) => sum + layer.quantity, 0);
+      const weightedReceiptUnitCost =
+        group.layers.reduce((sum, layer) => sum + layer.quantity * layer.unitCost, 0) / totalLayerQty;
       const quantityOrdered =
         mode === 'partial_then_close_short'
           ? totalLayerQty + PARTIAL_SHORTFALL_BY_CATEGORY[item.category]
@@ -576,6 +612,7 @@ function buildPurchaseOrderPlans(
         poNumber: buildPoNumber(tenantSlug, vendorReference),
         item,
         quantityOrdered,
+        unitCost: weightedReceiptUnitCost,
         orderDate: '2026-01-01',
         expectedDate: '2026-02-10',
         receiptLines: group.layers.map((layer) => ({
@@ -727,7 +764,7 @@ function buildChecksumLines(args: {
   for (const plan of [...args.plans].sort((left, right) => left.vendorReference.localeCompare(right.vendorReference))) {
     lines.push(`po:${plan.vendorReference}|${plan.poNumber}`);
     lines.push(
-      `po_line:${plan.vendorReference}|${plan.item.itemNormKey}|${toStableNumber(plan.quantityOrdered)}|${plan.item.uom}`
+      `po_line:${plan.vendorReference}|${plan.item.itemNormKey}|${toStableNumber(plan.quantityOrdered)}|${plan.item.uom}|${toCurrency(plan.unitCost)}|${SEED_CURRENCY_CODE}`
     );
     for (const receipt of [...plan.receiptLines].sort((left, right) => left.idempotencyKey.localeCompare(right.idempotencyKey))) {
       lines.push(

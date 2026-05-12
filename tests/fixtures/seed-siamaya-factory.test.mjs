@@ -233,6 +233,16 @@ async function fetchCleanReceiptMetrics(tenantId, tenantSlug) {
            AND po.vendor_reference LIKE 'seed:siamaya_factory:po:FACTORY:%'
            AND po.vendor_reference NOT LIKE '%:partial') AS po_count,
        (SELECT COUNT(*)::int
+          FROM purchase_order_lines pol
+          JOIN purchase_orders po
+            ON po.id = pol.purchase_order_id
+           AND po.tenant_id = pol.tenant_id
+         WHERE po.tenant_id = $1
+           AND po.vendor_reference LIKE 'seed:siamaya_factory:po:FACTORY:%'
+           AND po.vendor_reference NOT LIKE '%:partial'
+           AND pol.unit_cost > 0
+           AND pol.currency_code = 'THB') AS costed_po_line_count,
+       (SELECT COUNT(*)::int
           FROM purchase_order_receipts por
          WHERE por.tenant_id = $1
            AND por.idempotency_key LIKE $2
@@ -507,6 +517,7 @@ test('siamaya_factory seed with receipts in clean mode is deterministic and idem
   assert.ok(first.receiptMovementsCreated > 0);
   assert.ok(first.costLayersCreatedEstimate > 0);
   assert.ok(firstMetrics.po_count > 0);
+  assert.equal(firstMetrics.costed_po_line_count, firstMetrics.po_count, 'clean mode POs must carry positive THB unit costs');
   assert.ok(firstMetrics.receipt_count > 0);
   assert.ok(firstMetrics.movement_count > 0);
   assert.ok(firstMetrics.cost_layer_count > 0);

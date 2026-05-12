@@ -14,6 +14,7 @@ const {
   runChocolateSeed,
   DEMO_BOM_CODE,
   DEMO_BOM_COMPONENTS,
+  DEMO_CURRENCY_CODE,
   DEMO_CUSTOMER,
   DEMO_FINISHED_GOOD,
   DEMO_FLOW_IDS,
@@ -85,7 +86,11 @@ async function readManualSeedState(pool, tenantId) {
       [tenantId, DEMO_BOM_CODE]
     ),
     pool.query(
-      `SELECT i.sku, pol.quantity_ordered::numeric AS quantity_ordered, pol.uom
+      `SELECT i.sku,
+              pol.quantity_ordered::numeric AS quantity_ordered,
+              pol.uom,
+              pol.unit_cost::numeric AS unit_cost,
+              pol.currency_code
          FROM purchase_orders po
          JOIN vendors v
            ON v.id = po.vendor_id
@@ -152,6 +157,26 @@ function expectedRequirementBySku() {
   );
 }
 
+function expectedCostBySku() {
+  return new Map(
+    DEMO_BOM_COMPONENTS.map((component) => [
+      component.sku,
+      {
+        unitCost: component.unitCost,
+        quantity: component.quantityPer * DEMO_FLOW_QUANTITY,
+        value: component.unitCost * component.quantityPer * DEMO_FLOW_QUANTITY
+      }
+    ])
+  );
+}
+
+function assertNearlyEqual(actual, expected, label, epsilon = 0.000001) {
+  assert.ok(
+    Math.abs(Number(actual) - Number(expected)) <= epsilon,
+    `${label}: expected ${expected}, got ${actual}`
+  );
+}
+
 async function apiRequest(method, path, { token, body, idempotencyKey, query } = {}) {
   const url = new URL(getBaseUrl() + path);
   for (const [key, value] of Object.entries(query ?? {})) {
@@ -173,6 +198,26 @@ async function apiRequest(method, path, { token, body, idempotencyKey, query } =
     throw new Error(`API ${method} ${path} failed status=${res.status} body=${JSON.stringify(payload)}`);
   }
   return payload;
+}
+
+async function apiRawRequest(method, path, { token, body, idempotencyKey, query } = {}) {
+  const url = new URL(getBaseUrl() + path);
+  for (const [key, value] of Object.entries(query ?? {})) {
+    if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const contentType = res.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json')
+    ? await res.json().catch(() => null)
+    : await res.text().catch(() => '');
+  return { status: res.status, ok: res.ok, payload };
 }
 
 async function loginForSeed(config) {
@@ -241,6 +286,164 @@ async function readDemoItemsBySku(pool, tenantId) {
     [tenantId, DEMO_SKUS]
   );
   return new Map(result.rows.map((row) => [row.sku, row]));
+}
+
+function buildDemoUnitCostByItemId(itemBySku) {
+  return new Map(
+    DEMO_BOM_COMPONENTS.map((component) => {
+      const item = itemBySku.get(component.sku);
+      assert.ok(item, `component item missing: ${component.sku}`);
+      return [item.id, component.unitCost];
+    })
+  );
+}
+
+async function createDemoReceiptForPurchaseOrder({ token, pool, tenantId, idempotencyKey, externalRef, notes }) {
+  const po = await findPurchaseOrder(token);
+  const itemBySku = await readDemoItemsBySku(pool, tenantId);
+  const unitCostByItemId = buildDemoUnitCostByItemId(itemBySku);
+  const receipt = await apiRequest('POST', '/purchase-order-receipts', {
+    token,
+    idempotencyKey,
+    body: {
+      purchaseOrderId: po.id,
+      receivedAt: '2026-01-16T09:00:00.000Z',
+      externalRef,
+      notes,
+      idempotencyKey,
+      lines: po.lines.map((line) => {
+        const unitCost = unitCostByItemId.get(line.itemId);
+        assert.ok(unitCost > 0, `unit cost missing for PO line item ${line.itemId}`);
+        return {
+          purchaseOrderLineId: line.id,
+          uom: line.uom,
+          quantityReceived: Number(line.quantityOrdered),
+          unitCost
+        };
+      })
+    }
+  });
+
+  return { po, itemBySku, receipt };
+}
+
+async function readReceiptCostingRows(pool, tenantId, receiptId) {
+  const result = await pool.query(
+    `WITH layer_rollup AS (
+       SELECT icl.source_document_id AS receipt_line_id,
+              COUNT(*)::int AS layer_count,
+              COUNT(*) FILTER (WHERE loc.role = 'QA' AND icl.remaining_quantity > 0)::int AS qa_available_layer_count,
+              BOOL_AND(loc.role = 'QA') AS all_layers_in_qa,
+              COALESCE(SUM(icl.original_quantity), 0)::numeric AS original_qty,
+              COALESCE(SUM(icl.remaining_quantity), 0)::numeric AS remaining_qty,
+              COALESCE(MIN(icl.unit_cost), 0)::numeric AS min_unit_cost,
+              COALESCE(MAX(icl.unit_cost), 0)::numeric AS max_unit_cost,
+              COALESCE(SUM(icl.original_quantity * icl.unit_cost), 0)::numeric AS original_value,
+              COALESCE(SUM(icl.extended_cost), 0)::numeric AS remaining_value
+         FROM inventory_cost_layers icl
+         JOIN locations loc
+           ON loc.id = icl.location_id
+          AND loc.tenant_id = icl.tenant_id
+        WHERE icl.tenant_id = $1
+          AND icl.source_type = 'receipt'
+          AND icl.voided_at IS NULL
+        GROUP BY icl.source_document_id
+     ),
+     allocation_rollup AS (
+       SELECT purchase_order_receipt_line_id AS receipt_line_id,
+              COUNT(*) FILTER (WHERE status = 'QA' AND cost_layer_id IS NOT NULL)::int AS qa_cost_layer_allocations,
+              COALESCE(SUM(quantity) FILTER (WHERE status = 'QA'), 0)::numeric AS qa_allocation_qty
+         FROM receipt_allocations
+        WHERE tenant_id = $1
+        GROUP BY purchase_order_receipt_line_id
+     )
+     SELECT i.sku,
+            porl.id AS receipt_line_id,
+            porl.quantity_received::numeric AS quantity_received,
+            porl.unit_cost::numeric AS receipt_unit_cost,
+            pol.unit_cost::numeric AS po_unit_cost,
+            pol.currency_code,
+            COALESCE(lr.layer_count, 0)::int AS layer_count,
+            COALESCE(lr.qa_available_layer_count, 0)::int AS qa_available_layer_count,
+            COALESCE(lr.all_layers_in_qa, false) AS all_layers_in_qa,
+            COALESCE(lr.original_qty, 0)::numeric AS layer_original_qty,
+            COALESCE(lr.remaining_qty, 0)::numeric AS layer_remaining_qty,
+            COALESCE(lr.min_unit_cost, 0)::numeric AS min_layer_unit_cost,
+            COALESCE(lr.max_unit_cost, 0)::numeric AS max_layer_unit_cost,
+            COALESCE(lr.original_value, 0)::numeric AS layer_original_value,
+            COALESCE(lr.remaining_value, 0)::numeric AS layer_remaining_value,
+            COALESCE(ar.qa_cost_layer_allocations, 0)::int AS qa_cost_layer_allocations,
+            COALESCE(ar.qa_allocation_qty, 0)::numeric AS qa_allocation_qty
+       FROM purchase_order_receipt_lines porl
+       JOIN purchase_order_lines pol
+         ON pol.id = porl.purchase_order_line_id
+        AND pol.tenant_id = porl.tenant_id
+       JOIN items i
+         ON i.id = pol.item_id
+        AND i.tenant_id = pol.tenant_id
+       LEFT JOIN layer_rollup lr ON lr.receipt_line_id = porl.id
+       LEFT JOIN allocation_rollup ar ON ar.receipt_line_id = porl.id
+      WHERE porl.tenant_id = $1
+        AND porl.purchase_order_receipt_id = $2
+      ORDER BY i.sku`,
+    [tenantId, receiptId]
+  );
+  return result.rows;
+}
+
+function assertSeededReceiptCosting(rows) {
+  const expectedCosts = expectedCostBySku();
+  assert.equal(rows.length, DEMO_BOM_COMPONENTS.length);
+  for (const row of rows) {
+    const expected = expectedCosts.get(row.sku);
+    assert.ok(expected, `unexpected receipt line SKU ${row.sku}`);
+    assertNearlyEqual(row.quantity_received, expected.quantity, `${row.sku} receipt quantity`);
+    assertNearlyEqual(row.po_unit_cost, expected.unitCost, `${row.sku} PO unit cost`);
+    assert.equal(row.currency_code, DEMO_CURRENCY_CODE);
+    assertNearlyEqual(row.receipt_unit_cost, expected.unitCost, `${row.sku} receipt unit cost`);
+    assert.equal(Number(row.layer_count), 1, `${row.sku} receipt FIFO layer count`);
+    assert.equal(row.all_layers_in_qa, true, `${row.sku} receipt FIFO layer location`);
+    assert.equal(Number(row.qa_available_layer_count), 1, `${row.sku} available QA FIFO layer count`);
+    assertNearlyEqual(row.layer_original_qty, expected.quantity, `${row.sku} layer original quantity`);
+    assertNearlyEqual(row.layer_remaining_qty, expected.quantity, `${row.sku} layer remaining quantity`);
+    assertNearlyEqual(row.min_layer_unit_cost, expected.unitCost, `${row.sku} min layer unit cost`);
+    assertNearlyEqual(row.max_layer_unit_cost, expected.unitCost, `${row.sku} max layer unit cost`);
+    assertNearlyEqual(row.layer_original_value, expected.value, `${row.sku} layer original value`, 0.01);
+    assertNearlyEqual(row.layer_remaining_value, expected.value, `${row.sku} layer remaining value`, 0.01);
+    assert.equal(Number(row.qa_cost_layer_allocations), 1, `${row.sku} QA allocation cost-layer trace`);
+    assertNearlyEqual(row.qa_allocation_qty, expected.quantity, `${row.sku} QA allocation quantity`);
+  }
+}
+
+async function readQcIdempotencyMetrics(pool, tenantId, receiptLineId) {
+  const result = await pool.query(
+    `WITH source_events AS (
+       SELECT id, quantity
+         FROM qc_events
+        WHERE tenant_id = $1
+          AND purchase_order_receipt_line_id = $2
+     ),
+     linked_movements AS (
+       SELECT DISTINCT qil.inventory_movement_id
+         FROM qc_inventory_links qil
+         JOIN source_events qe ON qe.id = qil.qc_event_id
+        WHERE qil.tenant_id = $1
+     )
+     SELECT
+       (SELECT COUNT(*)::int FROM source_events) AS event_count,
+       (SELECT COALESCE(SUM(quantity), 0)::numeric FROM source_events) AS event_qty,
+       (SELECT COUNT(*)::int FROM linked_movements) AS movement_count,
+       (SELECT COUNT(*)::int
+          FROM cost_layer_transfer_links
+         WHERE tenant_id = $1
+           AND transfer_movement_id IN (SELECT inventory_movement_id FROM linked_movements)) AS transfer_link_count,
+       (SELECT COALESCE(SUM(quantity), 0)::numeric
+          FROM cost_layer_transfer_links
+         WHERE tenant_id = $1
+           AND transfer_movement_id IN (SELECT inventory_movement_id FROM linked_movements)) AS transfer_link_qty`,
+    [tenantId, receiptLineId]
+  );
+  return result.rows[0];
 }
 
 async function readOperationalValidation(pool, tenantId) {
@@ -325,31 +528,13 @@ async function readOperationalValidation(pool, tenantId) {
 }
 
 async function executeManualDemoFlow({ token, pool, tenantId }) {
-  const po = await findPurchaseOrder(token);
-  const itemBySku = await readDemoItemsBySku(pool, tenantId);
-  const unitCostByItemId = new Map(
-    DEMO_BOM_COMPONENTS.map((component) => {
-      const item = itemBySku.get(component.sku);
-      assert.ok(item, `component item missing: ${component.sku}`);
-      return [item.id, component.unitCost];
-    })
-  );
-  const receipt = await apiRequest('POST', '/purchase-order-receipts', {
+  const { itemBySku, receipt } = await createDemoReceiptForPurchaseOrder({
     token,
+    pool,
+    tenantId,
     idempotencyKey: 'test:siamaya:manual:e2e:receipt:v1',
-    body: {
-      purchaseOrderId: po.id,
-      receivedAt: '2026-01-16T09:00:00.000Z',
-      externalRef: 'TEST-RCPT-MILK-CHOC-1000-INGREDIENTS',
-      notes: 'Manual demo e2e test receipt.',
-      idempotencyKey: 'test:siamaya:manual:e2e:receipt:v1',
-      lines: po.lines.map((line) => ({
-        purchaseOrderLineId: line.id,
-        uom: line.uom,
-        quantityReceived: Number(line.quantityOrdered),
-        unitCost: unitCostByItemId.get(line.itemId) ?? 0
-      }))
-    }
+    externalRef: 'TEST-RCPT-MILK-CHOC-1000-INGREDIENTS',
+    notes: 'Manual demo e2e test receipt.'
   });
 
   for (const [index, line] of receipt.lines.entries()) {
@@ -513,11 +698,16 @@ test('manual Siamaya chocolate seed creates focused prerequisite state only', { 
   assert.equal(Number(state.bom.find((row) => row.sku === 'SIAMAYA-MILK-CHOC-FOIL-WRAPPER').component_quantity), 1);
 
   assert.equal(state.po.length, DEMO_BOM_COMPONENTS.length);
+  const expectedCosts = expectedCostBySku();
   for (const row of state.po) {
     const spec = expected.get(row.sku);
     assert.ok(spec, `unexpected PO component ${row.sku}`);
     assert.equal(Number(row.quantity_ordered), spec.quantity);
     assert.equal(row.uom, spec.uom);
+    const cost = expectedCosts.get(row.sku);
+    assert.ok(cost, `unexpected PO cost component ${row.sku}`);
+    assertNearlyEqual(row.unit_cost, cost.unitCost, `${row.sku} seeded PO unit cost`);
+    assert.equal(row.currency_code, DEMO_CURRENCY_CODE);
   }
 
   assert.equal(state.so.length, 1);
@@ -526,6 +716,155 @@ test('manual Siamaya chocolate seed creates focused prerequisite state only', { 
   assert.equal(Number(state.so[0].quantity_ordered), DEMO_FLOW_QUANTITY);
   assert.equal(state.so[0].uom, 'each');
   assert.equal(Number(state.shipped.quantity_shipped), 0);
+});
+
+test('seeded Siamaya receipt lines have FIFO cost layers and pass QC idempotently', { timeout: 300000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+  const config = seedConfig('manual', tenantSlug);
+
+  await runChocolateSeed(config);
+  const session = await loginForSeed(config);
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+
+  const { receipt } = await createDemoReceiptForPurchaseOrder({
+    token: session.accessToken,
+    pool,
+    tenantId,
+    idempotencyKey: 'test:siamaya:costed:receipt:v1',
+    externalRef: 'TEST-RCPT-MILK-CHOC-1000-COSTED',
+    notes: 'Manual demo cost-layer verification receipt.'
+  });
+
+  const preQcCostingRows = await readReceiptCostingRows(pool, tenantId, receipt.id);
+  assertSeededReceiptCosting(preQcCostingRows);
+
+  for (const [index, line] of receipt.lines.entries()) {
+    const idempotencyKey = `test:siamaya:costed:qc:${index + 1}:v1`;
+    const body = {
+      purchaseOrderReceiptLineId: line.id,
+      eventType: 'accept',
+      quantity: Number(line.quantityReceived),
+      uom: line.uom,
+      reasonCode: 'seed_costed_accept',
+      notes: 'Seeded receipt cost-layer QC accept.',
+      actorType: 'system',
+      actorId: 'seed-costing-test'
+    };
+    const accepted = await apiRequest('POST', '/qc-events', {
+      token: session.accessToken,
+      idempotencyKey,
+      body
+    });
+    assert.ok(accepted.id, `QC accept response missing id for receipt line ${line.id}`);
+    if (index === 0) {
+      const replay = await apiRequest('POST', '/qc-events', {
+        token: session.accessToken,
+        idempotencyKey,
+        body
+      });
+      assert.equal(replay.id, accepted.id);
+      const metrics = await readQcIdempotencyMetrics(pool, tenantId, line.id);
+      assert.equal(Number(metrics.event_count), 1);
+      assertNearlyEqual(metrics.event_qty, Number(line.quantityReceived), 'idempotent QC event quantity');
+      assert.equal(Number(metrics.movement_count), 1);
+      assert.equal(Number(metrics.transfer_link_count), 1);
+      assertNearlyEqual(metrics.transfer_link_qty, Number(line.quantityReceived), 'idempotent QC cost transfer quantity');
+    }
+  }
+});
+
+test('costless receipt line still fails QC accept with actionable 409', { timeout: 240000 }, async () => {
+  await ensureTestServer();
+  const pool = getDbPool();
+  const tenantSlug = TEST_TENANT_SLUG;
+  const config = seedConfig('manual', tenantSlug);
+
+  await runChocolateSeed(config);
+  const session = await loginForSeed(config);
+  const tenantId = await tenantIdForSlug(pool, tenantSlug);
+  const itemBySku = await readDemoItemsBySku(pool, tenantId);
+  const component = DEMO_BOM_COMPONENTS[0];
+  const item = itemBySku.get(component.sku);
+  assert.ok(item, `component item missing: ${component.sku}`);
+  const vendorResult = await pool.query(
+    `SELECT id
+       FROM vendors
+      WHERE tenant_id = $1
+        AND code = $2
+      LIMIT 1`,
+    [tenantId, DEMO_SUPPLIER.code]
+  );
+  const vendorId = vendorResult.rows[0]?.id;
+  assert.ok(vendorId, 'demo supplier missing');
+  const sellable = await findLocation(session.accessToken, 'SELLABLE');
+
+  const po = await apiRequest('POST', '/purchase-orders', {
+    token: session.accessToken,
+    body: {
+      poNumber: `TEST-COSTLESS-${Date.now()}`,
+      vendorId,
+      status: 'approved',
+      orderDate: '2026-01-16',
+      expectedDate: '2026-01-16',
+      shipToLocationId: sellable.id,
+      receivingLocationId: sellable.id,
+      notes: 'Costless receipt guard test.',
+      lines: [
+        {
+          lineNumber: 1,
+          itemId: item.id,
+          uom: component.uom,
+          quantityOrdered: 1
+        }
+      ]
+    }
+  });
+
+  const receipt = await apiRequest('POST', '/purchase-order-receipts', {
+    token: session.accessToken,
+    idempotencyKey: `test:siamaya:costless:receipt:${Date.now()}`,
+    body: {
+      purchaseOrderId: po.id,
+      receivedAt: '2026-01-16T09:00:00.000Z',
+      notes: 'Deliberately costless receipt for QC guard test.',
+      lines: [
+        {
+          purchaseOrderLineId: po.lines[0].id,
+          uom: component.uom,
+          quantityReceived: 1
+        }
+      ]
+    }
+  });
+  const receiptLine = receipt.lines[0];
+
+  const qcResponse = await apiRawRequest('POST', '/qc-events', {
+    token: session.accessToken,
+    idempotencyKey: `test:siamaya:costless:qc:${Date.now()}`,
+    body: {
+      purchaseOrderReceiptLineId: receiptLine.id,
+      eventType: 'accept',
+      quantity: 1,
+      uom: component.uom,
+      reasonCode: 'costless_guard',
+      notes: 'Expected to fail due to missing FIFO cost layer.',
+      actorType: 'system',
+      actorId: 'seed-costing-test'
+    }
+  });
+  assert.equal(qcResponse.status, 409);
+  assert.match(
+    String(qcResponse.payload?.error ?? ''),
+    /QC disposition requires available FIFO cost layers at source/
+  );
+
+  await apiRequest('POST', `/purchase-order-receipts/${receipt.id}/void`, {
+    token: session.accessToken,
+    idempotencyKey: `test:siamaya:costless:void:${Date.now()}`,
+    body: { reason: 'cleanup costless guard receipt' }
+  });
 });
 
 test('manual Siamaya chocolate seed supports the canonical operational walkthrough', { timeout: 300000 }, async () => {

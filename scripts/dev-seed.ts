@@ -312,7 +312,7 @@ async function ensurePurchaseOrder(
   log: ReturnType<typeof makeLogger>,
   poNumber: string,
   vendorId: string,
-  lines: { itemId: string; uom: string; quantityOrdered: number; lineNumber?: number }[],
+  lines: { itemId: string; uom: string; quantityOrdered: number; lineNumber?: number; unitCost: number; currencyCode: string }[],
 ) {
   // No search support; scan list pages for exact po_number match.
   let offset = 0
@@ -383,11 +383,18 @@ async function createReceipt(config: SeedConfig, log: ReturnType<typeof makeLogg
       receivedToLocationId: warehouseId,
       externalRef: `${config.prefix}-RCPT-01`,
       notes: `Seeded by ${config.prefix}`,
-      lines: (po.lines ?? []).map((l: any) => ({
-        purchaseOrderLineId: l.id,
-        uom: l.uom,
-        quantityReceived: Number(l.quantityOrdered ?? l.quantity_ordered ?? 0),
-      })),
+      lines: (po.lines ?? []).map((l: any) => {
+        const unitCost = Number(l.unitCost ?? l.unit_cost ?? l.unitPrice ?? l.unit_price)
+        if (!Number.isFinite(unitCost) || unitCost <= 0) {
+          throw new Error(`DEV_SEED_RECEIPT_UNIT_COST_REQUIRED line=${l.id}`)
+        }
+        return {
+          purchaseOrderLineId: l.id,
+          uom: l.uom,
+          quantityReceived: Number(l.quantityOrdered ?? l.quantity_ordered ?? 0),
+          unitCost,
+        }
+      }),
     },
   })
   log.info(`Receipt created: ${receipt.id}`)
@@ -705,8 +712,8 @@ async function main() {
 
   // 4) Ensure PO with 2 lines (C1, C2)
   const po = await ensurePurchaseOrder(config, log, `${config.prefix}-PO-01`, vendor.id, [
-    { lineNumber: 1, itemId: c1.id, uom: 'each', quantityOrdered: 5 },
-    { lineNumber: 2, itemId: c2.id, uom: 'each', quantityOrdered: 7 },
+    { lineNumber: 1, itemId: c1.id, uom: 'each', quantityOrdered: 5, unitCost: 2.5, currencyCode: 'THB' },
+    { lineNumber: 2, itemId: c2.id, uom: 'each', quantityOrdered: 7, unitCost: 3.75, currencyCode: 'THB' },
   ])
   if (!Array.isArray(po.lines) || po.lines.length < 2) {
     throw new Error('Purchase order does not include lines; cannot create receipt.')

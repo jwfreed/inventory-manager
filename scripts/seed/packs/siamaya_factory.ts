@@ -6,6 +6,7 @@ import { v5 as uuidv5 } from 'uuid';
 import type { PoolClient } from 'pg';
 import bcrypt from 'bcryptjs';
 import { acquireAtpLocks, createAtpLockContext, persistInventoryMovement } from '../../../src/domains/inventory';
+import { ensureLocationInventoryReady } from '../../../src/domain/inventory/binProvisioning';
 import { createOpeningBalanceCostLayerOnce } from '../../../src/services/costLayers.service';
 import {
   importBomDatasetFromFile,
@@ -1232,7 +1233,6 @@ async function upsertWarehouseRoleLocation(
   const isSellable = args.role === 'SELLABLE';
   if ((existing.rowCount ?? 0) > 0) {
     const locationId = existing.rows[0].id;
-    const role = operationalLocationRole(args.localCode);
     await client.query(
       `UPDATE locations
           SET local_code = $3,
@@ -1282,6 +1282,7 @@ async function upsertOperationalLocation(
     name: string;
   }
 ): Promise<{ id: string; code: string; created: boolean }> {
+  const role = operationalLocationRole(args.localCode);
   const existing = await client.query<LocationRow>(
     `SELECT id, code
        FROM locations
@@ -1310,7 +1311,6 @@ async function upsertOperationalLocation(
   }
 
   const locationId = deterministicId('location', args.tenantId, args.code);
-  const role = operationalLocationRole(args.localCode);
   await client.query(
     `INSERT INTO locations (
         id,
@@ -2877,6 +2877,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
       });
       seededLocationCodes.push(roleLocation.code);
       if (roleLocation.created) locationsCreated += 1;
+      await ensureLocationInventoryReady(roleLocation.id, tenantId, client);
       await upsertWarehouseDefault(client, {
         tenantId,
         warehouseId: warehouseRow.id,
@@ -2900,6 +2901,7 @@ export async function runSiamayaFactoryPack(client: PoolClient, options: Siamaya
     });
     seededLocationCodes.push(location.code);
     if (location.created) locationsCreated += 1;
+    await ensureLocationInventoryReady(location.id, tenantId, client);
   }
 
   await upsertAdminUser(client, {

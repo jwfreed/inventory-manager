@@ -101,7 +101,15 @@ type PurchaseOrder = {
   id: string
   poNumber: string
   status: string
-  lines: Array<{ id: string; itemId: string; uom: string; quantityOrdered: string | number }>
+  lines: Array<{
+    id: string
+    itemId: string
+    uom: string
+    quantityOrdered: string | number
+    unitCost?: string | number | null
+    unitPrice?: string | number | null
+    currencyCode?: string | null
+  }>
 }
 
 type Receipt = {
@@ -109,7 +117,7 @@ type Receipt = {
   purchaseOrderId: string
   status?: string
   inventoryMovementId?: string | null
-  lines: Array<{ id: string; itemId: string; uom: string; quantityReceived: string | number }>
+  lines: Array<{ id: string; itemId: string; uom: string; quantityReceived: string | number; unitCost?: string | number | null }>
 }
 
 type InventoryTransferResult = {
@@ -149,6 +157,7 @@ type Shipment = {
 }
 
 export const DEMO_FLOW_QUANTITY = 1000
+export const DEMO_CURRENCY_CODE = 'THB'
 
 export const DEMO_FINISHED_GOOD = {
   sku: 'SIAMAYA-MILK-CHOCOLATE-BAR-75G',
@@ -175,7 +184,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'g',
     dimension: 'mass' as const,
     quantityPer: 30,
-    unitCost: 0.04,
+    unitCost: 0.18,
   },
   {
     key: 'sugar',
@@ -185,7 +194,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'g',
     dimension: 'mass' as const,
     quantityPer: 20,
-    unitCost: 0.015,
+    unitCost: 0.035,
   },
   {
     key: 'milkPowder',
@@ -195,7 +204,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'g',
     dimension: 'mass' as const,
     quantityPer: 15,
-    unitCost: 0.03,
+    unitCost: 0.22,
   },
   {
     key: 'cacaoButter',
@@ -205,7 +214,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'g',
     dimension: 'mass' as const,
     quantityPer: 9.5,
-    unitCost: 0.05,
+    unitCost: 0.28,
   },
   {
     key: 'lecithin',
@@ -215,7 +224,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'g',
     dimension: 'mass' as const,
     quantityPer: 0.5,
-    unitCost: 0.08,
+    unitCost: 0.40,
   },
   {
     key: 'foilWrapper',
@@ -225,7 +234,7 @@ export const DEMO_BOM_COMPONENTS = [
     uom: 'each',
     dimension: 'count' as const,
     quantityPer: 1,
-    unitCost: 0.2,
+    unitCost: 1.20,
   },
 ]
 
@@ -290,6 +299,32 @@ export const DEMO_SKUS = [
 
 function componentRequirement(quantityPer: number) {
   return quantityPer * DEMO_FLOW_QUANTITY
+}
+
+function assertPositiveUnitCost(value: unknown, context: string): number {
+  const unitCost = nullableNumber(value)
+  if (unitCost === null || unitCost <= 0) {
+    throw new Error(`${context}_UNIT_COST_REQUIRED`)
+  }
+  return unitCost
+}
+
+function assertDemoPurchaseOrderCosting(
+  po: PurchaseOrder,
+  componentItems: Array<{ spec: (typeof DEMO_BOM_COMPONENTS)[number]; item: Item }>,
+) {
+  const expectedCostByItemId = new Map(componentItems.map(({ spec, item }) => [item.id, spec.unitCost]))
+  for (const line of po.lines ?? []) {
+    const expectedCost = expectedCostByItemId.get(line.itemId)
+    if (expectedCost === undefined) continue
+    const actualCost = assertPositiveUnitCost(line.unitCost ?? line.unitPrice, 'DEMO_PO_LINE')
+    if (Math.abs(actualCost - expectedCost) > 0.000001) {
+      throw new Error(`DEMO_PO_LINE_UNIT_COST_MISMATCH itemId=${line.itemId} expected=${expectedCost} actual=${actualCost}`)
+    }
+    if ((line.currencyCode ?? '').toUpperCase() !== DEMO_CURRENCY_CODE) {
+      throw new Error(`DEMO_PO_LINE_CURRENCY_REQUIRED itemId=${line.itemId}`)
+    }
+  }
 }
 
 function nullableNumber(value: unknown): number | null {
@@ -1183,6 +1218,7 @@ async function ensureDemoPurchaseOrder(
 ): Promise<PurchaseOrder> {
   const existing = await findPurchaseOrderByNumber(config, token, DEMO_PO.number)
   if (existing) {
+    assertDemoPurchaseOrderCosting(existing, componentItems)
     log.info(`Purchase order exists: ${DEMO_PO.number} (${existing.id})`)
     return existing
   }
@@ -1205,11 +1241,12 @@ async function ensureDemoPurchaseOrder(
         uom: spec.uom,
         quantityOrdered: componentRequirement(spec.quantityPer),
         unitCost: spec.unitCost,
-        currencyCode: 'THB',
+        currencyCode: DEMO_CURRENCY_CODE,
         notes: `Required for ${DEMO_FLOW_QUANTITY} bars at ${spec.quantityPer} ${spec.uom} per bar.`,
       })),
     },
   })
+  assertDemoPurchaseOrderCosting(created, componentItems)
   log.info(`Purchase order created: ${DEMO_PO.number} (${created.id})`)
   return created
 }
@@ -1234,12 +1271,15 @@ async function ensureDemoReceipt(
       externalRef: 'RCPT-MILK-CHOC-1000-INGREDIENTS',
       notes: 'Demo receipt for the ingredients and packaging required for exactly 1,000 milk chocolate bars.',
       idempotencyKey,
-      lines: po.lines.map((line) => ({
-        purchaseOrderLineId: line.id,
-        uom: line.uom,
-        quantityReceived: Number(line.quantityOrdered),
-        unitCost: unitCostByItemId.get(line.itemId) ?? 0,
-      })),
+      lines: po.lines.map((line) => {
+        const unitCost = assertPositiveUnitCost(unitCostByItemId.get(line.itemId), `DEMO_RECEIPT_LINE:${line.itemId}`)
+        return {
+          purchaseOrderLineId: line.id,
+          uom: line.uom,
+          quantityReceived: Number(line.quantityOrdered),
+          unitCost,
+        }
+      }),
     },
   })
   log.info(`Receipt ready for ${DEMO_PO.number} (${receipt.id})`)
@@ -1360,7 +1400,7 @@ async function ensureDemoSalesOrder(
           uom: DEMO_FINISHED_GOOD.defaultUom,
           quantityOrdered: DEMO_FLOW_QUANTITY,
           unitPrice: 3.5,
-          currencyCode: 'THB',
+          currencyCode: DEMO_CURRENCY_CODE,
           notes: 'Demo outbound finished goods.',
         },
       ],
@@ -1822,6 +1862,12 @@ async function verifyDemoSeed(tenantId: string) {
     const result = await client.query<{
       po_line_count: string | null
       po_component_total_ok: string | null
+      po_component_cost_ok: string | null
+      receipt_line_cost_ok: string | null
+      receipt_cost_layer_count: string | null
+      receipt_cost_layer_qa_count: string | null
+      receipt_cost_layer_value: string | null
+      expected_receipt_value: string | null
       so_quantity: string | null
       shipped_quantity: string | null
       consumed_line_count: string | null
@@ -1841,8 +1887,8 @@ async function verifyDemoSeed(tenantId: string) {
          SELECT id FROM items WHERE tenant_id = $1 AND sku = $2
        ),
        demo_components AS (
-         SELECT i.id, i.sku, v.required_qty, v.uom
-           FROM (VALUES ${DEMO_BOM_COMPONENTS.map((_, index) => `($${7 + index * 3}::text, $${8 + index * 3}::numeric, $${9 + index * 3}::text)`).join(', ')}) AS v(sku, required_qty, uom)
+         SELECT i.id, i.sku, v.required_qty, v.uom, v.unit_cost
+           FROM (VALUES ${DEMO_BOM_COMPONENTS.map((_, index) => `($${7 + index * 4}::text, $${8 + index * 4}::numeric, $${9 + index * 4}::text, $${10 + index * 4}::numeric)`).join(', ')}) AS v(sku, required_qty, uom, unit_cost)
            JOIN items i
              ON i.tenant_id = $1
             AND i.sku = v.sku
@@ -1879,6 +1925,69 @@ async function verifyDemoSeed(tenantId: string) {
              AND c.uom = pol.uom
              AND ABS(c.required_qty - pol.quantity_ordered) < 0.000001
            WHERE pol.tenant_id = $1) AS po_component_total_ok,
+         (SELECT COUNT(*)::text
+            FROM purchase_order_lines pol
+            JOIN demo_po po ON po.id = pol.purchase_order_id
+            JOIN demo_components c
+              ON c.id = pol.item_id
+             AND ABS(c.unit_cost - pol.unit_cost) < 0.000001
+             AND pol.currency_code = $${7 + DEMO_BOM_COMPONENTS.length * 4}
+           WHERE pol.tenant_id = $1) AS po_component_cost_ok,
+         (SELECT COUNT(*)::text
+            FROM purchase_order_receipt_lines porl
+            JOIN purchase_order_receipts por
+              ON por.id = porl.purchase_order_receipt_id
+             AND por.tenant_id = porl.tenant_id
+            JOIN purchase_order_lines pol
+              ON pol.id = porl.purchase_order_line_id
+             AND pol.tenant_id = porl.tenant_id
+            JOIN demo_po po ON po.id = por.purchase_order_id
+            JOIN demo_components c
+              ON c.id = pol.item_id
+             AND ABS(c.unit_cost - porl.unit_cost) < 0.000001
+           WHERE porl.tenant_id = $1) AS receipt_line_cost_ok,
+         (SELECT COUNT(*)::text
+            FROM inventory_cost_layers icl
+            JOIN purchase_order_receipt_lines porl
+              ON porl.id = icl.source_document_id
+             AND porl.tenant_id = icl.tenant_id
+            JOIN purchase_order_receipts por
+              ON por.id = porl.purchase_order_receipt_id
+             AND por.tenant_id = porl.tenant_id
+            JOIN demo_po po ON po.id = por.purchase_order_id
+           WHERE icl.tenant_id = $1
+             AND icl.source_type = 'receipt'
+             AND icl.voided_at IS NULL) AS receipt_cost_layer_count,
+         (SELECT COUNT(*)::text
+            FROM inventory_cost_layers icl
+            JOIN locations loc
+              ON loc.id = icl.location_id
+             AND loc.tenant_id = icl.tenant_id
+            JOIN purchase_order_receipt_lines porl
+              ON porl.id = icl.source_document_id
+             AND porl.tenant_id = icl.tenant_id
+            JOIN purchase_order_receipts por
+              ON por.id = porl.purchase_order_receipt_id
+             AND por.tenant_id = porl.tenant_id
+            JOIN demo_po po ON po.id = por.purchase_order_id
+           WHERE icl.tenant_id = $1
+             AND icl.source_type = 'receipt'
+             AND icl.voided_at IS NULL
+             AND loc.role = 'QA') AS receipt_cost_layer_qa_count,
+         (SELECT COALESCE(SUM(icl.original_quantity * icl.unit_cost), 0)::text
+            FROM inventory_cost_layers icl
+            JOIN purchase_order_receipt_lines porl
+              ON porl.id = icl.source_document_id
+             AND porl.tenant_id = icl.tenant_id
+            JOIN purchase_order_receipts por
+              ON por.id = porl.purchase_order_receipt_id
+             AND por.tenant_id = porl.tenant_id
+            JOIN demo_po po ON po.id = por.purchase_order_id
+           WHERE icl.tenant_id = $1
+             AND icl.source_type = 'receipt'
+             AND icl.voided_at IS NULL) AS receipt_cost_layer_value,
+         (SELECT COALESCE(SUM(required_qty * unit_cost), 0)::text
+            FROM demo_components) AS expected_receipt_value,
          (SELECT SUM(sol.quantity_ordered)::text
             FROM sales_order_lines sol
             JOIN demo_so so ON so.id = sol.sales_order_id
@@ -1988,7 +2097,9 @@ async function verifyDemoSeed(tenantId: string) {
           component.sku,
           componentRequirement(component.quantityPer),
           component.uom,
+          component.unitCost,
         ]),
+        DEMO_CURRENCY_CODE,
       ],
     )
     const row = result.rows[0]
@@ -1997,6 +2108,21 @@ async function verifyDemoSeed(tenantId: string) {
     if (Number(row?.po_line_count ?? 0) !== DEMO_BOM_COMPONENTS.length) failures.push(`PO line count ${row?.po_line_count}`)
     if (Number(row?.po_component_total_ok ?? 0) !== DEMO_BOM_COMPONENTS.length) {
       failures.push(`PO component totals ${row?.po_component_total_ok}`)
+    }
+    if (Number(row?.po_component_cost_ok ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`PO component costs ${row?.po_component_cost_ok}`)
+    }
+    if (Number(row?.receipt_line_cost_ok ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`receipt line costs ${row?.receipt_line_cost_ok}`)
+    }
+    if (Number(row?.receipt_cost_layer_count ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`receipt FIFO layers ${row?.receipt_cost_layer_count}`)
+    }
+    if (Number(row?.receipt_cost_layer_qa_count ?? 0) !== DEMO_BOM_COMPONENTS.length) {
+      failures.push(`receipt QA FIFO layers ${row?.receipt_cost_layer_qa_count}`)
+    }
+    if (Math.abs(Number(row?.receipt_cost_layer_value ?? 0) - Number(row?.expected_receipt_value ?? 0)) > 0.01) {
+      failures.push(`receipt layer value ${row?.receipt_cost_layer_value} expected ${row?.expected_receipt_value}`)
     }
     if (Number(row?.so_quantity ?? 0) !== DEMO_FLOW_QUANTITY) failures.push(`SO quantity ${row?.so_quantity}`)
     if (Number(row?.shipped_quantity ?? 0) !== DEMO_FLOW_QUANTITY) {
