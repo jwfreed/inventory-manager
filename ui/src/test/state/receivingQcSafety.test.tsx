@@ -33,6 +33,12 @@ vi.mock('@features/locations/queries', () => ({
 }))
 vi.mock('../../features/receiving/api/receipts', () => ({
   createReceipt: vi.fn(),
+  getReceipt: vi.fn(async () => ({
+    id: 'receipt-1',
+    status: 'posted',
+    receivedToLocationId: 'qa-1',
+    lines: [],
+  })),
   voidReceiptApi: vi.fn(),
 }))
 vi.mock('../../features/receiving/api/putaways', () => ({
@@ -98,9 +104,12 @@ vi.mock('../../features/receiving/hooks/useOfflineQueue', () => ({
 
 import { createQcEvent } from '../../features/receiving/api/qc'
 import { useOfflineQueue } from '../../features/receiving/hooks/useOfflineQueue'
+import { usePutaway, useReceipt } from '../../features/receiving/queries'
 
 const mockedCreateQcEvent = vi.mocked(createQcEvent)
 const mockedUseOfflineQueue = vi.mocked(useOfflineQueue)
+const mockedUsePutaway = vi.mocked(usePutaway)
+const mockedUseReceipt = vi.mocked(useReceipt)
 let queueOperationMock = vi.fn()
 
 function QuickAcceptOnceProbe() {
@@ -176,11 +185,24 @@ function ShortcutProbe() {
   )
 }
 
-function renderProvider(ui: ReactNode) {
+function PutawayValidationProbe() {
+  const ctx = useReceivingContext()
+  return (
+    <div>
+      <span data-testid="putaway-lines">{ctx.putawayLines.length}</span>
+      <span data-testid="first-putaway-line">{ctx.putawayLines[0]?.purchaseOrderReceiptLineId ?? ''}</span>
+      <span data-testid="qc-issues">{ctx.putawayQcIssues.length}</span>
+      <span data-testid="quantity-issues">{ctx.putawayQuantityIssues.length}</span>
+      <span data-testid="can-create">{String(ctx.canCreatePutaway)}</span>
+    </div>
+  )
+}
+
+function renderProvider(ui: ReactNode, initialEntry = '/receiving/qc?receiptId=receipt-1&qcLineId=line-1') {
   const queryClient = createTestQueryClient()
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/receiving/qc?receiptId=receipt-1&qcLineId=line-1']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <ReceivingProvider>{ui}</ReceivingProvider>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -190,6 +212,30 @@ function renderProvider(ui: ReactNode) {
 describe('receiving QC safety', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockedUsePutaway.mockImplementation(() => ({ data: null, isLoading: false, isError: false, error: null, refetch: vi.fn() }) as any)
+    mockedUseReceipt.mockImplementation(() => ({
+      data: {
+        id: 'receipt-1',
+        status: 'posted',
+        receivedToLocationId: 'qa-1',
+        lines: [
+          {
+            id: 'line-1',
+            purchaseOrderReceiptId: 'receipt-1',
+            quantityReceived: 5,
+            uom: 'each',
+            qcSummary: {
+              remainingUninspectedQuantity: 5,
+              breakdown: { accept: 0, hold: 0, reject: 0 },
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }) as any)
     queueOperationMock = vi.fn().mockResolvedValue('queued-1')
     mockedUseOfflineQueue.mockImplementation(() => ({
       isOnline: true,
@@ -366,5 +412,69 @@ describe('receiving QC safety', () => {
     const nextReplay = resolveQueuedQcEventPayload(legacyReplay.persistedPayload ?? buildQueuedQcEventPayload(legacyRequest))
     expect(nextReplay.idempotencyKey).toBe(legacyReplay.idempotencyKey)
     expect(nextReplay.persistedPayload).toBeNull()
+  })
+
+  it('does not flag current draft putaway quantities as QC issues', async () => {
+    mockedUseReceipt.mockImplementation(() => ({
+      data: {
+        id: 'receipt-1',
+        status: 'posted',
+        receivedToLocationId: 'qa-1',
+        lines: [
+          {
+            id: 'line-1',
+            purchaseOrderReceiptId: 'receipt-1',
+            quantityReceived: 5,
+            uom: 'each',
+            availableForNewPutaway: 0,
+            remainingQuantityToPutaway: 5,
+            putawayBlockedReason: null,
+            qcSummary: {
+              remainingUninspectedQuantity: 0,
+              breakdown: { accept: 5, hold: 0, reject: 0 },
+            },
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }) as any)
+    mockedUsePutaway.mockImplementation(() => ({
+      data: {
+        id: 'putaway-1',
+        status: 'draft',
+        purchaseOrderReceiptId: 'receipt-1',
+        sourceType: 'purchase_order_receipt',
+        lines: [
+          {
+            id: 'putaway-line-1',
+            lineNumber: 1,
+            purchaseOrderReceiptLineId: 'line-1',
+            itemId: 'item-1',
+            uom: 'each',
+            quantityPlanned: 5,
+            fromLocationId: 'qa-1',
+            toLocationId: 'sellable-1',
+            status: 'pending',
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }) as any)
+
+    renderProvider(<PutawayValidationProbe />, '/receiving/putaway?receiptId=receipt-1&putawayId=putaway-1')
+
+    await waitFor(() => {
+      expect(screen.getByTestId('putaway-lines')).toHaveTextContent('1')
+      expect(screen.getByTestId('first-putaway-line')).toHaveTextContent('line-1')
+      expect(screen.getByTestId('qc-issues')).toHaveTextContent('0')
+      expect(screen.getByTestId('quantity-issues')).toHaveTextContent('0')
+      expect(screen.getByTestId('can-create')).toHaveTextContent('true')
+    })
   })
 })

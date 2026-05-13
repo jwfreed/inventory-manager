@@ -10,6 +10,45 @@ import { mapTxRetryExhausted } from './shared/inventoryMutationConflicts';
 const router = Router();
 const uuidSchema = z.string().uuid();
 
+function getTransferInvariantCode(error: any) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  if (message.includes('TRANSFER_UOM_MISMATCH')) {
+    return 'TRANSFER_UOM_MISMATCH';
+  }
+  if (message.includes('TRANSFER_NOT_BALANCED')) {
+    return 'TRANSFER_NOT_BALANCED';
+  }
+  return null;
+}
+
+export function mapPutawayTransferInvariantError(error: any) {
+  const transferInvariantCode = getTransferInvariantCode(error);
+  if (error?.code === 'P0001' && transferInvariantCode === 'TRANSFER_UOM_MISMATCH') {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'TRANSFER_UOM_MISMATCH',
+          message:
+            'Putaway transfer cannot be posted because a single transfer movement contains multiple units of measure. Split the transfer by unit of measure and retry.'
+        }
+      }
+    };
+  }
+  if (error?.code === 'P0001' && transferInvariantCode === 'TRANSFER_NOT_BALANCED') {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'TRANSFER_NOT_BALANCED',
+          message: 'Putaway transfer cannot be posted because transfer movement quantities are not balanced.'
+        }
+      }
+    };
+  }
+  return null;
+}
+
 router.post('/putaways', async (req: Request, res: Response) => {
   const parsed = putawaySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -209,6 +248,10 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
           details: error?.details ?? null
         }
       });
+    }
+    const transferInvariantResponse = mapPutawayTransferInvariantError(error);
+    if (transferInvariantResponse) {
+      return res.status(transferInvariantResponse.status).json(transferInvariantResponse.body);
     }
     console.error(error);
     return res.status(500).json({ error: 'Failed to post putaway.' });

@@ -13,6 +13,7 @@ const { createQcEvent } = require('../../src/services/qc.service.ts');
 const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
 const { fetchReceiptById } = require('../../src/services/receipts.service.ts');
 const { createPutaway, postPutaway } = require('../../src/services/putaways.service.ts');
+const { mapPutawayTransferInvariantError } = require('../../src/routes/putaways.routes.ts');
 const { relocateTransferCostLayersInTx } = require('../../src/services/transferCosting.service.ts');
 const {
   rebuildReceiptAllocations,
@@ -42,6 +43,54 @@ async function createReceiptInQa(harness, { quantity, unitCost = 5, uom = 'each'
     item,
     receipt,
     receiptLineId: receipt.lines[0].id
+  };
+}
+
+async function createMultiLineReceiptInQa(harness, lines) {
+  const vendor = await harness.createVendor('QC-MULTI');
+  const items = [];
+  for (const [index, line] of lines.entries()) {
+    items.push(
+      await harness.createItem({
+        defaultLocationId: harness.topology.defaults.SELLABLE.id,
+        skuPrefix: `QC-MULTI-${index}-${randomUUID().slice(0, 6)}`,
+        type: line.type ?? 'raw',
+        defaultUom: line.uom,
+        uomDimension: line.uomDimension,
+        canonicalUom: line.canonicalUom,
+        stockingUom: line.uom
+      })
+    );
+  }
+  const purchaseOrder = await harness.createPurchaseOrder({
+    vendorId: vendor.id,
+    shipToLocationId: harness.topology.defaults.QA.id,
+    receivingLocationId: harness.topology.defaults.QA.id,
+    expectedDate: '2026-01-10',
+    status: 'approved',
+    lines: lines.map((line, index) => ({
+      itemId: items[index].id,
+      uom: line.uom,
+      quantityOrdered: line.quantity,
+      unitCost: line.unitCost ?? 5,
+      currencyCode: 'THB'
+    }))
+  });
+  const posted = await harness.postReceipt({
+    purchaseOrderId: purchaseOrder.id,
+    receivedAt: '2026-01-11T00:00:00.000Z',
+    idempotencyKey: `receipt:${harness.tenantId}:${randomUUID()}`,
+    lines: purchaseOrder.lines.map((poLine, index) => ({
+      purchaseOrderLineId: poLine.id,
+      uom: lines[index].uom,
+      quantityReceived: lines[index].quantity,
+      unitCost: lines[index].unitCost ?? 5
+    }))
+  });
+  return {
+    items,
+    receipt: posted.receipt,
+    lines: posted.receipt.lines
   };
 }
 
@@ -83,6 +132,43 @@ async function loadMovementLines(db, tenantId, movementId) {
     ...row,
     quantity: Number(row.quantity)
   }));
+}
+
+async function loadPutawayMovementSummaries(db, tenantId, putawayId) {
+  const res = await db.query(
+    `SELECT pl.inventory_movement_id AS "movementId",
+            COUNT(DISTINCT pl.id)::int AS "putawayLineCount",
+            COUNT(DISTINCT COALESCE(iml.canonical_uom, iml.uom))::int AS "uomCount",
+            ARRAY_AGG(DISTINCT COALESCE(iml.canonical_uom, iml.uom) ORDER BY COALESCE(iml.canonical_uom, iml.uom)) AS uoms,
+            COALESCE(SUM(COALESCE(iml.quantity_delta_canonical, iml.quantity_delta)), 0)::numeric AS "netQty",
+            COUNT(DISTINCT iml.id)::int AS "movementLineCount"
+       FROM putaway_lines pl
+       JOIN inventory_movement_lines iml
+         ON iml.tenant_id = pl.tenant_id
+        AND iml.movement_id = pl.inventory_movement_id
+      WHERE pl.tenant_id = $1
+        AND pl.putaway_id = $2
+        AND pl.status <> 'canceled'
+      GROUP BY pl.inventory_movement_id
+      ORDER BY MIN(pl.line_number) ASC`,
+    [tenantId, putawayId]
+  );
+  return res.rows.map((row) => ({
+    ...row,
+    netQty: Number(row.netQty)
+  }));
+}
+
+async function loadMovementCountForPutaway(db, tenantId, putawayId) {
+  const res = await db.query(
+    `SELECT COUNT(DISTINCT inventory_movement_id)::int AS count
+       FROM putaway_lines
+      WHERE tenant_id = $1
+        AND putaway_id = $2
+        AND inventory_movement_id IS NOT NULL`,
+    [tenantId, putawayId]
+  );
+  return Number(res.rows[0]?.count ?? 0);
 }
 
 async function loadReceiptLifecycle(db, tenantId, receiptId) {
@@ -675,6 +761,233 @@ test('receipt QC characterization keeps accepted stock in QA for putaway, preser
     [tenantId, rejectResult.eventId]
   );
   assert.equal(Number(ncrRes.rows[0]?.count ?? 0), 1);
+});
+
+test('mixed-UOM putaway posts separate balanced transfer movements and replays without duplication', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-mixed-uom',
+    tenantName: 'Contract Putaway Mixed UOM'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const fixture = await createMultiLineReceiptInQa(harness, [
+    { quantity: 10, uom: 'g', uomDimension: 'mass', canonicalUom: 'g', unitCost: 2 },
+    { quantity: 20, uom: 'g', uomDimension: 'mass', canonicalUom: 'g', unitCost: 3 },
+    { quantity: 4, uom: 'each', uomDimension: 'count', canonicalUom: 'each', unitCost: 1, type: 'packaging' }
+  ]);
+
+  for (const line of fixture.lines) {
+    await createQcEvent(
+      tenantId,
+      {
+        purchaseOrderReceiptLineId: line.id,
+        eventType: 'accept',
+        quantity: line.quantityReceived,
+        uom: line.uom,
+        actorType: 'system'
+      },
+      { idempotencyKey: `qc-mixed-accept:${line.id}:${randomUUID()}` }
+    );
+  }
+
+  const putaway = await createPutaway(
+    tenantId,
+    {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: fixture.receipt.id,
+      lines: fixture.lines.map((line, index) => ({
+        lineNumber: index + 1,
+        purchaseOrderReceiptLineId: line.id,
+        toLocationId: topology.defaults.SELLABLE.id,
+        uom: line.uom,
+        quantity: line.quantityReceived
+      }))
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `putaway-mixed:${fixture.receipt.id}:${randomUUID()}` }
+  );
+
+  const posted = await postPutaway(tenantId, putaway.id, {
+    actor: { type: 'system', id: null }
+  });
+  assert.equal(posted.status, 'completed');
+  assert.ok(posted.lines.every((line) => line.status === 'completed'));
+  assert.ok(posted.lines.every((line) => line.inventoryMovementId));
+
+  const movementIds = Array.from(new Set(posted.lines.map((line) => line.inventoryMovementId)));
+  assert.equal(movementIds.length, 2, 'mixed canonical UOM putaway must create one transfer movement per UOM group');
+
+  const movementSummaries = await loadPutawayMovementSummaries(db, tenantId, putaway.id);
+  assert.equal(movementSummaries.length, 2);
+  for (const summary of movementSummaries) {
+    assert.equal(summary.uomCount, 1);
+    assert.ok(Math.abs(summary.netQty) < 1e-6, `movement ${summary.movementId} must be balanced`);
+  }
+  const gramsMovement = movementSummaries.find((summary) => summary.uoms.includes('g'));
+  const eachMovement = movementSummaries.find((summary) => summary.uoms.includes('each'));
+  assert.equal(gramsMovement?.putawayLineCount, 2);
+  assert.equal(gramsMovement?.movementLineCount, 4);
+  assert.equal(eachMovement?.putawayLineCount, 1);
+  assert.equal(eachMovement?.movementLineCount, 2);
+
+  const allocationResult = await db.query(
+    `SELECT purchase_order_receipt_line_id AS "receiptLineId",
+            location_id AS "locationId",
+            status,
+            quantity::numeric AS quantity,
+            inventory_movement_id AS "movementId",
+            inventory_movement_line_id AS "movementLineId"
+       FROM receipt_allocations
+      WHERE tenant_id = $1
+        AND purchase_order_receipt_line_id = ANY($2::uuid[])
+      ORDER BY purchase_order_receipt_line_id ASC, status ASC`,
+    [tenantId, fixture.lines.map((line) => line.id)]
+  );
+  assert.equal(allocationResult.rowCount, fixture.lines.length);
+  for (const allocation of allocationResult.rows) {
+    const putawayLine = posted.lines.find((line) => line.purchaseOrderReceiptLineId === allocation.receiptLineId);
+    assert.ok(putawayLine);
+    assert.equal(allocation.status, 'AVAILABLE');
+    assert.equal(allocation.locationId, topology.defaults.SELLABLE.id);
+    assert.equal(allocation.movementId, putawayLine.inventoryMovementId);
+    assert.ok(allocation.movementLineId);
+    assert.ok(Math.abs(Number(allocation.quantity) - putawayLine.quantityMoved) < 1e-6);
+  }
+
+  const costResult = await db.query(
+    `SELECT item_id AS "itemId",
+            location_id AS "locationId",
+            uom,
+            COALESCE(SUM(remaining_quantity), 0)::numeric AS quantity
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND item_id = ANY($2::uuid[])
+        AND voided_at IS NULL
+      GROUP BY item_id, location_id, uom`,
+    [tenantId, fixture.items.map((item) => item.id)]
+  );
+  const costQty = (itemId, locationId, uom) =>
+    Number(costResult.rows.find((row) => row.itemId === itemId && row.locationId === locationId && row.uom === uom)?.quantity ?? 0);
+  for (const [index, item] of fixture.items.entries()) {
+    const line = fixture.lines[index];
+    assert.equal(costQty(item.id, topology.defaults.QA.id, line.uom), 0);
+    assert.ok(Math.abs(costQty(item.id, topology.defaults.SELLABLE.id, line.uom) - line.quantityReceived) < 1e-6);
+  }
+
+  const movementRowsBeforeReplay = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND external_ref LIKE $2`,
+    [tenantId, `putaway:${putaway.id}:transfer:%`]
+  );
+  const transferLinksBeforeReplay = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM cost_layer_transfer_links
+      WHERE tenant_id = $1
+        AND transfer_movement_id = ANY($2::uuid[])`,
+    [tenantId, movementIds]
+  );
+
+  const replayed = await postPutaway(tenantId, putaway.id, {
+    actor: { type: 'system', id: null }
+  });
+  assert.equal(replayed.status, 'completed');
+  assert.deepEqual(
+    new Set(replayed.lines.map((line) => line.inventoryMovementId)),
+    new Set(movementIds)
+  );
+  assert.equal(await loadMovementCountForPutaway(db, tenantId, putaway.id), 2);
+  const movementRowsAfterReplay = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND external_ref LIKE $2`,
+    [tenantId, `putaway:${putaway.id}:transfer:%`]
+  );
+  const transferLinksAfterReplay = await db.query(
+    `SELECT COUNT(*)::int AS count
+       FROM cost_layer_transfer_links
+      WHERE tenant_id = $1
+        AND transfer_movement_id = ANY($2::uuid[])`,
+    [tenantId, movementIds]
+  );
+  assert.equal(Number(movementRowsAfterReplay.rows[0]?.count ?? 0), Number(movementRowsBeforeReplay.rows[0]?.count ?? 0));
+  assert.equal(Number(transferLinksAfterReplay.rows[0]?.count ?? 0), Number(transferLinksBeforeReplay.rows[0]?.count ?? 0));
+});
+
+test('same-UOM batched putaway still posts as one balanced transfer movement', { timeout: 240000 }, async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'contract-putaway-same-uom',
+    tenantName: 'Contract Putaway Same UOM'
+  });
+  const { tenantId, pool: db, topology } = harness;
+  const fixture = await createMultiLineReceiptInQa(harness, [
+    { quantity: 7, uom: 'g', uomDimension: 'mass', canonicalUom: 'g', unitCost: 2 },
+    { quantity: 13, uom: 'g', uomDimension: 'mass', canonicalUom: 'g', unitCost: 3 }
+  ]);
+
+  for (const line of fixture.lines) {
+    await createQcEvent(
+      tenantId,
+      {
+        purchaseOrderReceiptLineId: line.id,
+        eventType: 'accept',
+        quantity: line.quantityReceived,
+        uom: line.uom,
+        actorType: 'system'
+      },
+      { idempotencyKey: `qc-same-accept:${line.id}:${randomUUID()}` }
+    );
+  }
+
+  const putaway = await createPutaway(
+    tenantId,
+    {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: fixture.receipt.id,
+      lines: fixture.lines.map((line, index) => ({
+        lineNumber: index + 1,
+        purchaseOrderReceiptLineId: line.id,
+        toLocationId: topology.defaults.SELLABLE.id,
+        uom: line.uom,
+        quantity: line.quantityReceived
+      }))
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `putaway-same:${fixture.receipt.id}:${randomUUID()}` }
+  );
+
+  const posted = await postPutaway(tenantId, putaway.id, {
+    actor: { type: 'system', id: null }
+  });
+  assert.equal(posted.status, 'completed');
+  assert.equal(new Set(posted.lines.map((line) => line.inventoryMovementId)).size, 1);
+
+  const movementSummaries = await loadPutawayMovementSummaries(db, tenantId, putaway.id);
+  assert.equal(movementSummaries.length, 1);
+  assert.deepEqual(movementSummaries[0].uoms, ['g']);
+  assert.equal(movementSummaries[0].uomCount, 1);
+  assert.equal(movementSummaries[0].putawayLineCount, 2);
+  assert.equal(movementSummaries[0].movementLineCount, 4);
+  assert.ok(Math.abs(movementSummaries[0].netQty) < 1e-6);
+});
+
+test('putaway route maps transfer balance invariant failures to actionable conflicts', () => {
+  const mismatch = mapPutawayTransferInvariantError({
+    code: 'P0001',
+    message: 'TRANSFER_UOM_MISMATCH'
+  });
+  assert.equal(mismatch?.status, 409);
+  assert.equal(mismatch?.body?.error?.code, 'TRANSFER_UOM_MISMATCH');
+  assert.match(mismatch?.body?.error?.message, /multiple units of measure/);
+
+  const unbalanced = mapPutawayTransferInvariantError({
+    code: 'P0001',
+    message: 'TRANSFER_NOT_BALANCED'
+  });
+  assert.equal(unbalanced?.status, 409);
+  assert.equal(unbalanced?.body?.error?.code, 'TRANSFER_NOT_BALANCED');
+  assert.match(unbalanced?.body?.error?.message, /quantities are not balanced/);
 });
 
 test('unresolved hold prevents QC completion — full hold', { timeout: 240000 }, async () => {

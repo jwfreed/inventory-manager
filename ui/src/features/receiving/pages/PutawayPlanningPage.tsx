@@ -35,6 +35,13 @@ export default function PutawayPlanningPage() {
         ? 'No accepted inventory is available for putaway. Review QC classification.'
         : 'Putaway prerequisites not met.'
   const receiptIdForAction = receipt?.id ?? ctx.receiptIdForQc
+  const completedMovementIds = useMemo(() => {
+    const movementIds = new Set((putaway?.lines ?? []).map((line) => line.inventoryMovementId).filter(Boolean))
+    if (movementIds.size === 0 && putaway?.inventoryMovementId) {
+      movementIds.add(putaway.inventoryMovementId)
+    }
+    return Array.from(movementIds)
+  }, [putaway?.inventoryMovementId, putaway?.lines])
 
   const summary = useMemo(() => {
     const lines = putaway?.lines ?? []
@@ -277,8 +284,8 @@ export default function PutawayPlanningPage() {
                   <Button
                     variant="secondary"
                     onClick={() =>
-                      putaway.inventoryMovementId
-                        ? navigate(`/movements/${putaway.inventoryMovementId}`)
+                      completedMovementIds.length === 1
+                        ? navigate(`/movements/${completedMovementIds[0]}`)
                         : navigate('/movements')
                     }
                   >

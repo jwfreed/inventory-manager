@@ -837,7 +837,9 @@ export function ReceivingProvider({ children }: Props) {
     onSuccess: (p) => {
       setPutawayId(p.id)
       setPutawayResumeNotice(null)
+      void refreshReceiptDetail(receiptIdForQc)
       void putawayQuery.refetch()
+      void recentReceiptsQuery.refetch()
     },
     onError: (error) => {
       if (getErrorMessage(error, '') === 'Putaway already posted.') {
@@ -1315,6 +1317,21 @@ export function ReceivingProvider({ children }: Props) {
     !receiptPostedForSelectedPo &&
     !poClosed
 
+  const currentDraftPlannedQtyByReceiptLineId = useMemo(() => {
+    const draft = putawayQuery.data
+    const plannedByLine = new Map<string, number>()
+    if (!draft || !['draft', 'in_progress'].includes(draft.status)) {
+      return plannedByLine
+    }
+    for (const line of draft.lines ?? []) {
+      plannedByLine.set(
+        line.purchaseOrderReceiptLineId,
+        (plannedByLine.get(line.purchaseOrderReceiptLineId) ?? 0) + (line.quantityPlanned ?? 0),
+      )
+    }
+    return plannedByLine
+  }, [putawayQuery.data])
+
   const putawayQcIssues = useMemo(
     () =>
       putawayLines
@@ -1322,11 +1339,13 @@ export function ReceivingProvider({ children }: Props) {
           if (!line.purchaseOrderReceiptLineId) return null
           const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
           if (!selected) return null
-          if ((selected.availableQty ?? 0) > 0) return null
+          const effectiveAvailableQty =
+            (selected.availableQty ?? 0) + (currentDraftPlannedQtyByReceiptLineId.get(line.purchaseOrderReceiptLineId) ?? 0)
+          if (effectiveAvailableQty > 0) return null
           return { idx, label: selected.label, reason: selected.blockedReason }
         })
         .filter((x): x is { idx: number; label: string; reason: string } => x !== null),
-    [putawayLines, receiptLineOptions],
+    [putawayLines, receiptLineOptions, currentDraftPlannedQtyByReceiptLineId],
   )
 
   const putawayQuantityIssues = useMemo(
@@ -1336,14 +1355,15 @@ export function ReceivingProvider({ children }: Props) {
           if (!line.purchaseOrderReceiptLineId) return null
           const selected = receiptLineOptions.find((opt) => opt.value === line.purchaseOrderReceiptLineId)
           if (!selected) return null
-          const availableQty = selected.availableQty ?? 0
+          const availableQty =
+            (selected.availableQty ?? 0) + (currentDraftPlannedQtyByReceiptLineId.get(line.purchaseOrderReceiptLineId) ?? 0)
           const lineQty = line.quantity === '' ? 0 : Number(line.quantity)
           if (availableQty > 0 && lineQty <= availableQty) return null
           if (availableQty === 0) return null
           return { idx, label: selected.label, availableQty }
         })
         .filter((x): x is { idx: number; label: string; availableQty: number } => x !== null),
-    [putawayLines, receiptLineOptions],
+    [putawayLines, receiptLineOptions, currentDraftPlannedQtyByReceiptLineId],
   )
 
   const canCreatePutaway = !putawayMutation.isPending && putawayQcIssues.length === 0 && putawayQuantityIssues.length === 0
