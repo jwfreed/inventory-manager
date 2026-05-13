@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { renderWithQueryClient } from '../testUtils'
@@ -84,6 +84,10 @@ function renderPage(initialEntry = '/receiving/qc/receipt-1') {
         path: '/receiving',
         element: <LocationProbe />,
       },
+      {
+        path: '/receiving/putaway',
+        element: <LocationProbe />,
+      },
     ],
     { initialEntries: [initialEntry] },
   )
@@ -95,6 +99,7 @@ describe('QcClassificationPage keyboard shortcuts', () => {
   const buildContextValue = (overrides: Record<string, unknown> = {}) => ({
     receiptIdForQc: 'receipt-1',
     loadReceiptForQc: vi.fn(),
+    refreshReceiptDetail: vi.fn().mockResolvedValue(null),
     selectedQcLineId: 'line-1',
     selectedQcLine: { id: 'line-1', uom: 'each' },
     qcStats: { accept: 0, hold: 0, reject: 0, remaining: 5 },
@@ -207,9 +212,16 @@ describe('QcClassificationPage keyboard shortcuts', () => {
     expect(promptSpy).not.toHaveBeenCalled()
   })
 
-  it('guides completed QC to putaway using the real putaway route', () => {
+  it('refreshes receipt detail before guiding completed QC to putaway', async () => {
+    const refreshReceiptDetail = vi.fn().mockResolvedValue({
+      id: 'receipt-1',
+      status: 'posted',
+      receivedAt: '2026-05-11T00:00:00Z',
+      lines: [],
+    })
     mockedUseReceivingContext.mockReturnValue(
       buildContextValue({
+        refreshReceiptDetail,
         receiptQuery: {
           data: {
             id: 'receipt-1',
@@ -228,7 +240,10 @@ describe('QcClassificationPage keyboard shortcuts', () => {
     renderPage()
 
     expect(screen.getByText('QC classification complete')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Continue to putaway' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to putaway' }))
+
+    await waitFor(() => expect(refreshReceiptDetail).toHaveBeenCalledWith('receipt-1'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/receiving/putaway'))
   })
 
   it('turns the no-receipt state into a next QC action when queue work exists', () => {

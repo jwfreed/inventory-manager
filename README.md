@@ -59,21 +59,25 @@ npm run test:scenarios
 
 ## Local Demo Seeds
 
-With `DATABASE_URL` configured, migrations applied, and the API running at `http://localhost:3100`, seed the completed Siamaya chocolate demo with:
+With `DATABASE_URL` configured, migrations applied, and the API running at `http://localhost:3100`, seed the Siamaya chocolate item and purchasing prerequisites with:
 
 ```bash
 npm run dev:seed:chocolate
 ```
 
-The completed seed defaults to tenant `siamaya` and login `jon.freed@gmail.com` / `admin@local`. It is idempotent for the demo flow and verifies a posted shipment for exactly 1,000 `Milk Chocolate Bar` units. It creates or reuses deterministic records including `PO-COMPLETED-1000-MILK-CHOCOLATE`, `SO-COMPLETED-1000-MILK-CHOCOLATE`, `Demo Customer`, and `SHIP-COMPLETED-1000-MILK-CHOCOLATE`.
+The default chocolate seed targets tenant `siamaya` and login `jon.freed@gmail.com` / `admin@local`. It creates or reuses the supplier, customer, warehouse locations, `Milk Chocolate Bar`, raw and packaging items, BOM, UOM conversions, and one costed purchase order for the ingredients and wrappers required for 1,000 bars. It intentionally does not create receipts, QC events, work orders, production completions, sales orders, reservations, or shipments.
 
-To prepare only the prerequisites for a manual UI walkthrough:
+The manual seed command is an explicit alias for that PO-only walkthrough setup:
 
 ```bash
 npm run dev:seed:siamaya:manual
 ```
 
-The manual seed also targets tenant `siamaya` with `jon.freed@gmail.com` / `admin@local`. It creates or reuses the supplier, customer, warehouse locations, `Milk Chocolate Bar`, raw and packaging items, BOM, UOM conversions, and enough raw/packaging inventory to produce at least 1,000 bars. Opening balance adjustments are tagged with `manual_seed_opening_balance`. It intentionally does not create purchase orders, receipts, work orders, production completions, sales orders, reservations, or shipments, and it verifies that no reserved manual UI artifacts exist with `PO-SIAMAYA-*`, `WO-SIAMAYA-*`, `SO-SIAMAYA-*`, or `SHIP-SIAMAYA-*`.
+To run the full completed demo flow, including receipt, QC accept, production, sales order, reservation, and posted shipment:
+
+```bash
+npm run dev:seed:siamaya:completed
+```
 
 Both seeds first attempt to log in with the configured Siamaya admin. They do not create tenant membership or reset an existing password unless explicitly run with:
 

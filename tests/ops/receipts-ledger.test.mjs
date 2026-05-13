@@ -304,17 +304,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     params: { external_ref: `qc_event:${qcEventId}`, limit: 5 }
   });
   assert.equal(qcMovementsRes.res.status, 200);
-  assert.ok((qcMovementsRes.payload.data || []).length >= 1, `No QC movements found for qc_event:${qcEventId}`);
-  const qcMovement = qcMovementsRes.payload.data[0];
-  assert.equal(qcMovement.movementType, 'transfer');
-
-  const qcLinesRes = await apiRequest('GET', `/inventory-movements/${qcMovement.id}/lines`, { token });
-  assert.equal(qcLinesRes.res.status, 200);
-  const qcLines = qcLinesRes.payload.data || [];
-  const qaOut = qcLines.find((line) => line.locationId === qaLocation.id);
-  const fgIn = qcLines.find((line) => line.locationId === fgLocation.id);
-  assert.ok(qaOut && Number(qaOut.quantityDelta) < 0);
-  assert.ok(fgIn && Number(fgIn.quantityDelta) > 0);
+  assert.equal((qcMovementsRes.payload.data || []).length, 0, 'Receipt QC accept must not post inventory movements');
 
   const qaSnapshotAfterQc = await apiRequest('GET', '/inventory-snapshot', {
     token,
@@ -335,6 +325,8 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     Math.abs(totalAfterQc - totalAfterReceipt) < 1e-6,
     `QA+FG conservation violated: afterReceipt=${totalAfterReceipt} afterQc=${totalAfterQc} qaBefore=${qaOnHandBefore} qaAfterReceipt=${qaOnHand} fgBefore=${fgOnHandBefore} fgAfterQc=${fgOnHandAfterQc}`
   );
+  assert.ok(Math.abs(Number(qaOnHandAfterQc) - Number(qaOnHand)) < 1e-6, 'QA remains unchanged after QC accept');
+  assert.ok(Math.abs(Number(fgOnHandAfterQc) - Number(fgOnHandBefore)) < 1e-6, 'Sellable remains unchanged before putaway');
 
   const costRes3 = await db.query(
     `SELECT COUNT(*) AS count

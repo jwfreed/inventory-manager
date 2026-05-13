@@ -132,7 +132,7 @@ async function createReceipt(token, poId, poLineId, quantity) {
     }
   });
   assert.equal(res.res.status, 201);
-  return res.payload.lines[0].id;
+  return { receiptId: res.payload.id, receiptLineId: res.payload.lines[0].id };
 }
 
 async function qcAccept(token, receiptLineId, quantity, actorId) {
@@ -148,6 +148,25 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
     }
   });
   assert.equal(res.res.status, 201);
+}
+
+async function putawayReceiptLine(token, receiptId, receiptLineId, toLocationId, quantity) {
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
 }
 
 test('late QC updates ATP/backorder after commitments', async () => {
@@ -169,7 +188,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
   const { orderId, lineId } = await createSalesOrder(token, customerId, itemId, sellableLocation.id, warehouse.id, 5);
 
   const po = await createPurchaseOrder(token, vendorId, sellableLocation.id, itemId, 5);
-  const receiptLineId = await createReceipt(token, po.id, po.lines[0].id, 5);
+  const { receiptId, receiptLineId } = await createReceipt(token, po.id, po.lines[0].id, 5);
 
   const reserveRes = await apiRequest('POST', '/reservations', {
     token,
@@ -211,11 +230,11 @@ test('late QC updates ATP/backorder after commitments', async () => {
       assert.equal(res.res.status, 200);
       return Number(res.payload.lines?.[0]?.derivedBackorderQty ?? 0);
     },
-    (value) => value <= backorderBefore,
-    { label: 'backorder not increased after QC accept' }
+    (value) => Math.abs(value - backorderBefore) < 1e-6,
+    { label: 'backorder unchanged after QC accept before putaway' }
   );
 
-  const sellableSnapshot = await waitForCondition(
+  const sellableBeforePutaway = await waitForCondition(
     async () => {
       const res = await apiRequest('GET', '/inventory-snapshot', {
         token,
@@ -224,10 +243,12 @@ test('late QC updates ATP/backorder after commitments', async () => {
       assert.equal(res.res.status, 200);
       return Number(res.payload.data?.[0]?.onHand ?? 0);
     },
-    (value) => value > 0,
-    { label: 'sellable snapshot after QC accept' }
+    (value) => Math.abs(value) < 1e-6,
+    { label: 'sellable snapshot after QC accept before putaway' }
   );
-  assert.ok(Number.isFinite(sellableSnapshot));
+  assert.ok(Math.abs(sellableBeforePutaway) < 1e-6);
+
+  await putawayReceiptLine(token, receiptId, receiptLineId, sellableLocation.id, 5);
 
   if (reserveRes.res.status !== 201) {
     const reserveAfter = await apiRequest('POST', '/reservations', {
@@ -256,7 +277,7 @@ test('late QC updates ATP/backorder after commitments', async () => {
         return Number(res.payload.lines?.[0]?.derivedBackorderQty ?? 0);
       },
       (value) => value <= backorderBefore,
-      { label: 'backorder cleared after QC accept' }
+      { label: 'backorder cleared after putaway' }
     );
   }
 });

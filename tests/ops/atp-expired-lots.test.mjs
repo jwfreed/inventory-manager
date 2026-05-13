@@ -227,7 +227,7 @@ async function receiveIntoQa(token, vendorId, itemId, shipToLocationId, quantity
     }
   });
   assert.equal(receiptRes.res.status, 201);
-  return receiptRes.payload.lines[0].id;
+  return { receiptId: receiptRes.payload.id, receiptLineId: receiptRes.payload.lines[0].id };
 }
 
 async function qcAccept(token, receiptLineId, quantity, actorId) {
@@ -244,6 +244,26 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   });
   assert.equal(res.res.status, 201);
   return res.payload.id;
+}
+
+async function putawayReceiptLine(token, receiptId, receiptLineId, toLocationId, quantity) {
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
+  return postRes.payload.inventoryMovementId;
 }
 
 test('ATP excludes expired lots from sellable on-hand', async () => {
@@ -275,7 +295,7 @@ test('ATP excludes expired lots from sellable on-hand', async () => {
   assert.ok(Math.abs(Number(atp.availableToPromise) - 6) < 1e-6);
 });
 
-test('QC accept into sellable for expired lot stays excluded from ATP', async () => {
+test('putaway into sellable for expired lot stays excluded from ATP', async () => {
   const session = await getSession();
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
@@ -293,14 +313,9 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   const expiredAt = new Date(Date.now() - 86400000).toISOString();
   const expiredLotId = await createLot(token, itemId, expiredAt);
 
-  const receiptLineId = await receiveIntoQa(token, vendorRes.payload.id, itemId, sellable.id, 10);
-  const qcEventId = await qcAccept(token, receiptLineId, 10, userId);
-
-  const linkRes = await db.query(
-    `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
-    [tenantId, qcEventId]
-  );
-  const movementId = linkRes.rows[0]?.inventory_movement_id;
+  const { receiptId, receiptLineId } = await receiveIntoQa(token, vendorRes.payload.id, itemId, sellable.id, 10);
+  await qcAccept(token, receiptLineId, 10, userId);
+  const movementId = await putawayReceiptLine(token, receiptId, receiptLineId, sellable.id, 10);
   assert.ok(movementId);
   const linesRes = await apiRequest('GET', `/inventory-movements/${movementId}/lines`, { token });
   assert.equal(linesRes.res.status, 200);
@@ -316,7 +331,7 @@ test('QC accept into sellable for expired lot stays excluded from ATP', async ()
   const atp = await waitForCondition(
     () => getAtpDetail(token, itemId, sellable.id, warehouse.id, { allowNotFound: true }),
     (value) => value === null,
-    { label: 'atp excludes expired lot after qc accept' }
+    { label: 'atp excludes expired lot after putaway' }
   );
   assert.equal(atp, null);
 });

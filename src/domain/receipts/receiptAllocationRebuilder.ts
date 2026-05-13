@@ -21,7 +21,8 @@ import {
  *
  * Guarantees provided:
  * - Rebuild consumes authoritative inputs only: receipt lines, inventory movements,
- *   QC events plus QC movement links, completed putaway lines, and reconciliation resolutions.
+ *   QC events, QC movement links for non-accept dispositions, completed putaway lines,
+ *   and reconciliation resolutions.
  * - Identical authoritative inputs produce identical allocation ordering and IDs.
  * - Missing links, ambiguous mappings, conflicting allocation targets, and post-rebuild
  *   invariant violations fail immediately.
@@ -441,7 +442,7 @@ async function rebuildFromAuthoritativeSources(params: {
        JOIN purchase_order_lines pol
          ON pol.id = prl.purchase_order_line_id
         AND pol.tenant_id = prl.tenant_id
-       JOIN inventory_bins ib
+       LEFT JOIN inventory_bins ib
          ON ib.id = qe.destination_bin_id
         AND ib.tenant_id = qe.tenant_id
        LEFT JOIN qc_inventory_links qil
@@ -453,8 +454,14 @@ async function rebuildFromAuthoritativeSources(params: {
     [params.tenantId, params.receiptId]
   );
   for (const [index, event] of qcResult.rows.entries()) {
+    if (event.event_type === 'accept') {
+      continue;
+    }
     if (!event.inventory_movement_id) {
       failAuthoritativeInconsistency('qc_movement_missing');
+    }
+    if (!event.destination_location_id) {
+      failAuthoritativeInconsistency('qc_destination_missing');
     }
     const quantity = roundQuantity(Number(event.quantity ?? 0));
     const consumed = consumeWorkingAllocations({
@@ -474,10 +481,6 @@ async function rebuildFromAuthoritativeSources(params: {
       direction: 'positive',
       sourceLineId: `${computeSourceLineId(['qc_event', event.id])}#1`
     });
-    const destinationStatus =
-      event.event_type === 'accept'
-        ? RECEIPT_ALLOCATION_STATUSES.AVAILABLE
-        : RECEIPT_ALLOCATION_STATUSES.HOLD;
     for (const [consumedIndex, item] of consumed.entries()) {
       const sortKey = nextSortKey(`qc:${index}`, consumedIndex);
       allocations.push({
@@ -488,7 +491,7 @@ async function rebuildFromAuthoritativeSources(params: {
         inventoryMovementId: event.inventory_movement_id,
         inventoryMovementLineId: movementLine.id,
         quantity: item.quantity,
-        status: destinationStatus,
+        status: RECEIPT_ALLOCATION_STATUSES.HOLD,
         sortKey
       });
     }

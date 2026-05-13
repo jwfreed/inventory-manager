@@ -11,6 +11,8 @@ require('tsconfig-paths/register');
 
 const { createQcEvent } = require('../../src/services/qc.service.ts');
 const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
+const { fetchReceiptById } = require('../../src/services/receipts.service.ts');
+const { createPutaway, postPutaway } = require('../../src/services/putaways.service.ts');
 const { relocateTransferCostLayersInTx } = require('../../src/services/transferCosting.service.ts');
 const {
   rebuildReceiptAllocations,
@@ -143,6 +145,33 @@ async function loadDefaultBinId(db, tenantId, locationId) {
   );
   assert.equal(res.rowCount, 1);
   return res.rows[0].id;
+}
+
+async function createDraftPutawayForReceiptLine(harness, fixture, { quantity, uom = 'each', toLocationId } = {}) {
+  return createPutaway(
+    harness.tenantId,
+    {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: fixture.receipt.id,
+      lines: [
+        {
+          purchaseOrderReceiptLineId: fixture.receiptLineId,
+          toLocationId: toLocationId ?? harness.topology.defaults.SELLABLE.id,
+          uom,
+          quantity
+        }
+      ]
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `putaway:${fixture.receiptLineId}:${quantity}:${randomUUID()}` }
+  );
+}
+
+async function postPutawayForReceiptLine(harness, fixture, { quantity, uom = 'each', toLocationId } = {}) {
+  const putaway = await createDraftPutawayForReceiptLine(harness, fixture, { quantity, uom, toLocationId });
+  return postPutaway(harness.tenantId, putaway.id, {
+    actor: { type: 'system', id: null }
+  });
 }
 
 async function createPostedDuplicateShapePutawayFixture(harness, options = {}) {
@@ -513,7 +542,7 @@ async function deleteWarehouseDefaultRole(db, tenantId, warehouseId, role) {
   );
 }
 
-test('receipt QC characterization preserves allocation movement, lifecycle transitions, NCR creation, and replay', { timeout: 240000 }, async () => {
+test('receipt QC characterization keeps accepted stock in QA for putaway, preserves lifecycle transitions, NCR creation, and replay', { timeout: 240000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'contract-qc-receipt',
     tenantName: 'Contract QC Receipt'
@@ -554,6 +583,7 @@ test('receipt QC characterization preserves allocation movement, lifecycle trans
   assert.equal(acceptedReplay.replayed, true);
   assert.equal(acceptedReplay.eventId, acceptedFirst.eventId);
   assert.equal(acceptedReplay.movementId, acceptedFirst.movementId);
+  assert.equal(acceptedFirst.movementId, null, 'receipt QC accept must not post sellable inventory movement');
   assert.equal(
     await countQcEventsForSource(db, tenantId, 'purchase_order_receipt_line_id', accepted.receiptLineId),
     1
@@ -562,14 +592,43 @@ test('receipt QC characterization preserves allocation movement, lifecycle trans
 
   const acceptedAllocations = await loadReceiptAllocations(db, tenantId, accepted.receiptLineId);
   assert.equal(acceptedAllocations.length, 1);
-  assert.equal(acceptedAllocations[0].status, 'AVAILABLE');
-  assert.equal(acceptedAllocations[0].locationId, topology.defaults.SELLABLE.id);
-  assert.equal(acceptedAllocations[0].movementId, acceptedFirst.movementId);
+  assert.equal(acceptedAllocations[0].status, 'QA');
+  assert.equal(acceptedAllocations[0].locationId, topology.defaults.QA.id);
+  assert.equal(acceptedAllocations[0].movementId, initialAllocations[0].movementId);
   assert.ok(Math.abs(acceptedAllocations[0].quantity - 5) < 1e-6);
+
+  assert.equal(await harness.readOnHand(accepted.item.id, topology.defaults.QA.id), 5);
+  assert.equal(await harness.readOnHand(accepted.item.id, topology.defaults.SELLABLE.id), 0);
+
+  const acceptedReceiptView = await fetchReceiptById(tenantId, accepted.receipt.id);
+  const acceptedLineView = acceptedReceiptView?.lines.find((line) => line.id === accepted.receiptLineId);
+  assert.ok(acceptedLineView, 'accepted receipt line appears in read model');
+  assert.equal(acceptedLineView.putawayAcceptedQuantity, 5);
+  assert.equal(acceptedLineView.availableForNewPutaway, 5);
+  assert.equal(acceptedLineView.remainingQuantityToPutaway, 5);
+  assert.equal(acceptedLineView.putawayBlockedReason, null);
+
+  const draftPutaway = await createDraftPutawayForReceiptLine(harness, accepted, { quantity: 2 });
+  assert.equal(draftPutaway.status, 'draft');
+  const afterDraftView = await fetchReceiptById(tenantId, accepted.receipt.id);
+  const afterDraftLine = afterDraftView?.lines.find((line) => line.id === accepted.receiptLineId);
+  assert.equal(afterDraftLine?.availableForNewPutaway, 3);
+  assert.equal(afterDraftLine?.remainingQuantityToPutaway, 5);
+
+  const postedPutaway = await postPutaway(tenantId, draftPutaway.id, {
+    actor: { type: 'system', id: null }
+  });
+  assert.equal(postedPutaway.status, 'completed');
+  const afterPostView = await fetchReceiptById(tenantId, accepted.receipt.id);
+  const afterPostLine = afterPostView?.lines.find((line) => line.id === accepted.receiptLineId);
+  assert.equal(afterPostLine?.availableForNewPutaway, 3);
+  assert.equal(afterPostLine?.remainingQuantityToPutaway, 3);
+  assert.equal(await harness.readOnHand(accepted.item.id, topology.defaults.QA.id), 3);
+  assert.equal(await harness.readOnHand(accepted.item.id, topology.defaults.SELLABLE.id), 2);
 
   const acceptedLifecycle = await loadReceiptLifecycle(db, tenantId, accepted.receipt.id);
   assert.equal(acceptedLifecycle?.status, 'posted');
-  assert.equal(acceptedLifecycle?.lifecycle_state, 'QC_COMPLETED');
+  assert.equal(acceptedLifecycle?.lifecycle_state, 'PUTAWAY_PENDING');
 
   await assert.rejects(
     createQcEvent(
@@ -680,7 +739,7 @@ test('unresolved hold prevents QC completion — partial accept + partial hold',
   assert.equal(lifecycle?.lifecycle_state, 'QC_PENDING', 'QC must not complete while hold quantity remains unresolved');
 });
 
-test('receipt QC rebuilds missing allocation state before mutating receipt allocations', { timeout: 240000 }, async () => {
+test('receipt QC accept rebuilds missing allocation state before validating accepted QA stock', { timeout: 240000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'contract-qc-allocation-rebuild',
     tenantName: 'Contract QC Allocation Rebuild'
@@ -709,8 +768,10 @@ test('receipt QC rebuilds missing allocation state before mutating receipt alloc
 
   const allocations = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
   assert.equal(result.replayed, false);
-  assert.equal(allocations.length, 2);
-  assert.equal(allocations.find((allocation) => allocation.status === 'AVAILABLE')?.locationId, topology.defaults.SELLABLE.id);
+  assert.equal(result.movementId, null);
+  assert.equal(allocations.length, 1);
+  assert.equal(allocations[0].status, 'QA');
+  assert.equal(allocations[0].locationId, topology.defaults.QA.id);
   assert.equal(allocations.reduce((total, allocation) => total + allocation.quantity, 0), 3);
 });
 
@@ -944,6 +1005,7 @@ test('receipt allocation rebuild preserves complex lifecycle state after partial
     },
     { idempotencyKey: `qc-receipt-lifecycle-accept-2:${randomUUID()}` }
   );
+  await postPutawayForReceiptLine(harness, fixture, { quantity: 6 });
 
   const closeout = await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
     actorType: 'system',
@@ -1004,7 +1066,7 @@ test('receipt allocation rebuild fails when authoritative movement link is unmat
     tenantId,
     {
       purchaseOrderReceiptLineId: fixture.receiptLineId,
-      eventType: 'accept',
+      eventType: 'hold',
       quantity: 1,
       uom: 'each',
       actorType: 'system'
@@ -1118,6 +1180,7 @@ test('receipt closeout adjustment uses adjustment-aware allocation expectations'
     },
     { idempotencyKey: `qc-receipt-closeout-adjustment:${randomUUID()}` }
   );
+  await postPutawayForReceiptLine(harness, fixture, { quantity: 5 });
 
   await db.query(
     `DELETE FROM receipt_allocations
@@ -2052,16 +2115,21 @@ test('partial: accept 90, hold 10, release 10 → QC completes, accepted qty una
   assert.equal(finalLifecycle?.lifecycle_state, 'QC_COMPLETED', 'QC must complete after releasing held 10');
 
   const allocations = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
+  const qaAllocations = allocations.filter((a) => a.status === 'QA');
   const availableAllocations = allocations.filter((a) => a.status === 'AVAILABLE');
   const holdAllocations = allocations.filter((a) => a.status === 'HOLD');
 
   assert.equal(holdAllocations.length, 0, 'no HOLD allocations must remain');
+  const totalQa = qaAllocations.reduce((sum, a) => sum + a.quantity, 0);
   const totalAvailable = availableAllocations.reduce((sum, a) => sum + a.quantity, 0);
-  assert.ok(Math.abs(totalAvailable - 100) < 1e-6, 'all 100 units must be AVAILABLE');
+  assert.ok(Math.abs(totalQa - 90) < 1e-6, 'accepted 90 must remain in QA until putaway');
+  assert.ok(Math.abs(totalAvailable - 10) < 1e-6, 'released hold quantity follows hold-disposition release policy');
 
-  // All allocations at SELLABLE location
+  for (const alloc of qaAllocations) {
+    assert.equal(alloc.locationId, topology.defaults.QA.id, 'accepted receipt stock must remain in QA before putaway');
+  }
   for (const alloc of availableAllocations) {
-    assert.equal(alloc.locationId, topology.defaults.SELLABLE.id, 'released hold must be at SELLABLE location');
+    assert.equal(alloc.locationId, topology.defaults.SELLABLE.id, 'released hold follows hold-disposition release location');
   }
 });
 
@@ -2170,9 +2238,9 @@ test('hold disposition: accepted quantity is not affected by hold resolution', {
   );
 
   const allocsBefore = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
-  const availBefore = allocsBefore.filter((a) => a.status === 'AVAILABLE');
-  const totalAvailBefore = availBefore.reduce((sum, a) => sum + a.quantity, 0);
-  assert.ok(Math.abs(totalAvailBefore - 15) < 1e-6, 'accepted 15 must be AVAILABLE before disposition');
+  const qaBefore = allocsBefore.filter((a) => a.status === 'QA');
+  const totalQaBefore = qaBefore.reduce((sum, a) => sum + a.quantity, 0);
+  assert.ok(Math.abs(totalQaBefore - 15) < 1e-6, 'accepted 15 must remain in QA before putaway');
 
   await resolveHoldDisposition(
     tenantId,
@@ -2187,9 +2255,9 @@ test('hold disposition: accepted quantity is not affected by hold resolution', {
   );
 
   const allocsAfter = await loadReceiptAllocations(db, tenantId, fixture.receiptLineId);
-  const availAfter = allocsAfter.filter((a) => a.status === 'AVAILABLE');
-  const totalAvailAfter = availAfter.reduce((sum, a) => sum + a.quantity, 0);
-  assert.ok(Math.abs(totalAvailAfter - 15) < 1e-6, 'accepted 15 must still be AVAILABLE and unaffected by rework');
+  const qaAfter = allocsAfter.filter((a) => a.status === 'QA');
+  const totalQaAfter = qaAfter.reduce((sum, a) => sum + a.quantity, 0);
+  assert.ok(Math.abs(totalQaAfter - 15) < 1e-6, 'accepted 15 must remain in QA and be unaffected by rework');
 
   const reworkAllocs = allocsAfter.filter((a) => a.status === 'REWORK');
   assert.equal(reworkAllocs.length, 1, 'one REWORK terminal allocation must exist');

@@ -14,7 +14,7 @@ import { useAuth } from '@shared/auth'
 import { useDebouncedValue } from '@shared'
 import { purchaseOrdersQueryKeys, usePurchaseOrder, usePurchaseOrdersList } from '@features/purchaseOrders/queries'
 import { useLocationsList } from '@features/locations/queries'
-import { createReceipt, voidReceiptApi, type ReceiptCreatePayload } from '../api/receipts'
+import { createReceipt, getReceipt, voidReceiptApi, type ReceiptCreatePayload } from '../api/receipts'
 import { createPutaway, postPutaway, type PutawayCreatePayload } from '../api/putaways'
 import {
   createQcEvent,
@@ -191,6 +191,7 @@ export type ReceivingContextValue = {
   onCreateQcEvent: () => void
   onQuickAcceptQc: () => void
   onSubmitQcShortcutEvent: (request: QcEventCreatePayload) => Promise<boolean>
+  refreshReceiptDetail: (receiptId?: string) => Promise<PurchaseOrderReceipt | null>
   onResolveHoldDisposition: (
     dispositionType: HoldDispositionPayload['dispositionType'],
     quantity: number,
@@ -715,13 +716,23 @@ export function ReceivingProvider({ children }: Props) {
     })
   }, [activeQcLineId])
 
+  const refreshReceiptDetail = useCallback(async (receiptId = receiptIdForQc) => {
+    if (!receiptId) return null
+    await queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.all })
+    const detail = await queryClient.fetchQuery({
+      queryKey: receivingQueryKeys.receipts.detail(receiptId),
+      queryFn: () => getReceipt(receiptId),
+    })
+    return detail
+  }, [queryClient, receiptIdForQc])
+
   const qcEventMutation = useMutation({
     mutationFn: ({ payload, options }: QcEventMutationVariables) => createQcEvent(payload, options),
     onSuccess: (event, variables) => {
       qcOperationIdempotencyKeysRef.current.delete(variables.operationSignature)
       setLastQcEvent(event)
       updateQcDraft({ reasonCode: '', notes: '' })
-      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      void refreshReceiptDetail(receiptIdForQc)
       void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.qcEvents.forLine(activeQcLineId) })
       void recentReceiptsQuery.refetch()
     },
@@ -805,9 +816,8 @@ export function ReceivingProvider({ children }: Props) {
   const holdDispositionMutation = useMutation({
     mutationFn: (payload: HoldDispositionPayload) => resolveHoldDisposition(payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      void refreshReceiptDetail(receiptIdForQc)
       void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.qcEvents.forLine(activeQcLineId) })
-      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.all })
       void recentReceiptsQuery.refetch()
     },
   })
@@ -817,7 +827,7 @@ export function ReceivingProvider({ children }: Props) {
     onSuccess: (p) => {
       setPutawayId(p.id)
       updateReceivingParams({ receiptId: receiptIdForQc, putawayId: p.id })
-      void queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      void refreshReceiptDetail(receiptIdForQc)
       void recentReceiptsQuery.refetch()
     },
   })
@@ -1190,8 +1200,7 @@ export function ReceivingProvider({ children }: Props) {
         }
       }
       
-      // Refresh receipt data
-      await queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      await refreshReceiptDetail(receiptIdForQc)
       clearQcLineSelection()
     } catch (error) {
       const apiError = error as { status?: number } | null
@@ -1207,7 +1216,7 @@ export function ReceivingProvider({ children }: Props) {
       setIsBulkProcessing(false)
       bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey, refreshReceiptDetail])
 
   const bulkHoldQcLines = useCallback(async (reasonCode: string, notes: string) => {
     if (selectedQcLineIds.size === 0 || !receiptQuery.data) return
@@ -1238,8 +1247,7 @@ export function ReceivingProvider({ children }: Props) {
         }
       }
       
-      // Refresh receipt data
-      await queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      await refreshReceiptDetail(receiptIdForQc)
       clearQcLineSelection()
     } catch (error) {
       console.error('Bulk hold failed:', error)
@@ -1247,7 +1255,7 @@ export function ReceivingProvider({ children }: Props) {
       setIsBulkProcessing(false)
       bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey, refreshReceiptDetail])
 
   const bulkRejectQcLines = useCallback(async (reasonCode: string, notes: string) => {
     if (selectedQcLineIds.size === 0 || !receiptQuery.data) return
@@ -1278,8 +1286,7 @@ export function ReceivingProvider({ children }: Props) {
         }
       }
       
-      // Refresh receipt data
-      await queryClient.invalidateQueries({ queryKey: receivingQueryKeys.receipts.detail(receiptIdForQc) })
+      await refreshReceiptDetail(receiptIdForQc)
       clearQcLineSelection()
     } catch (error) {
       console.error('Bulk reject failed:', error)
@@ -1287,7 +1294,7 @@ export function ReceivingProvider({ children }: Props) {
       setIsBulkProcessing(false)
       bulkQcSubmitInFlightRef.current = false
     }
-  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, queryClient, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey])
+  }, [selectedQcLineIds, receiptQuery.data, receiptIdForQc, user, clearQcLineSelection, isBulkProcessing, resolveQcEventOperationIdempotencyKey, refreshReceiptDetail])
 
   // ─────────────────────────────────────────────────────────────
   // Validation
@@ -1650,6 +1657,7 @@ export function ReceivingProvider({ children }: Props) {
       onCreateQcEvent,
       onQuickAcceptQc,
       onSubmitQcShortcutEvent,
+      refreshReceiptDetail,
       onResolveHoldDisposition,
 
       // Putaway Step
@@ -1771,6 +1779,7 @@ export function ReceivingProvider({ children }: Props) {
       onCreateQcEvent,
       onQuickAcceptQc,
       onSubmitQcShortcutEvent,
+      refreshReceiptDetail,
       onResolveHoldDisposition,
       putawayLines,
       addPutawayLine,

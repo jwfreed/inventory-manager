@@ -350,7 +350,7 @@ function parseBool(value: string | undefined): boolean {
 }
 
 function loadConfig(): SeedConfig {
-  const rawMode = process.env.CHOCOLATE_SEED_MODE || process.env.SEED_MODE || 'completed'
+  const rawMode = process.env.CHOCOLATE_SEED_MODE || process.env.SEED_MODE || 'manual'
   if (rawMode !== 'completed' && rawMode !== 'manual') {
     throw new Error(`Unsupported seed mode ${rawMode}; expected completed or manual`)
   }
@@ -1679,7 +1679,7 @@ async function assertManualWorkflowPrerequisitesOnly(tenantId: string) {
       Object.entries(result.rows[0] ?? {}).map(([key, value]) => [key, Number(value)]),
     )
     const failures = Object.entries(row).filter(([key, value]) => {
-      if (key === 'demo_po' || key === 'demo_so') return value !== 1
+      if (key === 'demo_po') return value !== 1
       return value !== 0
     })
     if (failures.length > 0) {
@@ -2230,15 +2230,6 @@ async function seedManualSiamayaScenario(
 ) {
   const context = await ensureMilkChocolateManufacturingPrerequisites(config, token, tenantId, log)
   await ensureDemoPurchaseOrder(config, token, log, context.vendor, context.componentItems, context.warehouse)
-  await ensureDemoSalesOrder(
-    config,
-    token,
-    log,
-    context.customer,
-    context.finishedItem,
-    context.warehouse,
-    context.operations.fgStage,
-  )
   await verifyManualSeed(config, token, tenantId, log, context)
   log.info('Siamaya manual UI scenario seed complete.')
 }
@@ -2251,7 +2242,6 @@ function printDemoSummary(config: SeedConfig, adminEmail: string, mode: SeedMode
   console.log(`Finished good SKU: ${DEMO_FINISHED_GOOD.sku}`)
   console.log(`BOM code: ${DEMO_BOM_CODE}`)
   console.log(`Purchase order: ${DEMO_PO.number}`)
-  console.log(`Sales order: ${DEMO_SO.number}`)
   if (mode === 'manual') {
     console.log('Next manual demo steps:')
     console.log('1. Receive the purchase order ingredient and wrapper lines.')
@@ -2259,9 +2249,9 @@ function printDemoSummary(config: SeedConfig, adminEmail: string, mode: SeedMode
     console.log('3. Put away ingredients and wrappers if the UI presents a putaway task.')
     console.log('4. Create or execute production for 1,000 bars using the active BOM.')
     console.log('5. Confirm finished goods are available in finished goods sellable stock.')
-    console.log('6. Reserve 1,000 finished bars to the sales order.')
-    console.log('7. Create and post the shipment for 1,000 bars.')
+    console.log('6. Create any outbound sales order or shipment needed for the walkthrough.')
   } else {
+    console.log(`Sales order: ${DEMO_SO.number}`)
     console.log(`Completed mode posted shipment: ${DEMO_FLOW_IDS.shipmentExternalRef}`)
   }
   console.log('')

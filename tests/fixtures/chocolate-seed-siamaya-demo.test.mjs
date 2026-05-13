@@ -507,14 +507,11 @@ async function readOperationalValidation(pool, tenantId) {
            AND iml.quantity_delta = $7
            AND iml.uom = 'each') AS finished_receipt_line_count,
        (SELECT COUNT(*)::int FROM qc_inventory_links WHERE tenant_id = $1) AS qc_movement_link_count,
-      (SELECT COUNT(DISTINCT im.id)::int
-         FROM inventory_movements im
-         JOIN inventory_movement_lines iml
-           ON iml.movement_id = im.id
-          AND iml.tenant_id = im.tenant_id
-        WHERE im.tenant_id = $1
-          AND im.source_type = 'inventory_transfer'
-          AND iml.reason_code = 'demo_putaway_to_production_store_in') AS storage_transfer_count`,
+       (SELECT COUNT(*)::int
+          FROM putaways
+         WHERE tenant_id = $1
+           AND status = 'completed'
+           AND source_type = 'purchase_order_receipt') AS storage_transfer_count`,
     [
       tenantId,
       DEMO_FINISHED_GOOD.sku,
@@ -528,7 +525,7 @@ async function readOperationalValidation(pool, tenantId) {
 }
 
 async function executeManualDemoFlow({ token, pool, tenantId }) {
-  const { itemBySku, receipt } = await createDemoReceiptForPurchaseOrder({
+  const { po, itemBySku, receipt } = await createDemoReceiptForPurchaseOrder({
     token,
     pool,
     tenantId,
@@ -554,25 +551,39 @@ async function executeManualDemoFlow({ token, pool, tenantId }) {
     });
   }
 
-  const sellable = await findLocation(token, 'SELLABLE');
   const rawStore = await findLocation(token, 'FACTORY_RM_STORE');
   const fgStage = await findLocation(token, 'FACTORY_FG_STAGE');
   const warehouse = await findLocation(token, 'MAIN');
   for (const component of DEMO_BOM_COMPONENTS) {
     const item = itemBySku.get(component.sku);
     assert.ok(item, `component item missing: ${component.sku}`);
-    await apiRequest('POST', '/inventory-transfers', {
+    const poLine = po.lines.find((line) => line.itemId === item.id);
+    assert.ok(poLine, `PO line missing for component ${component.sku}`);
+    const receiptLine = receipt.lines.find((line) => line.purchaseOrderLineId === poLine.id);
+    assert.ok(receiptLine, `receipt line missing for component ${component.sku}`);
+    const putaway = await apiRequest('POST', '/putaways', {
       token,
-      idempotencyKey: `test:siamaya:manual:e2e:store:${component.key}:v1`,
+      idempotencyKey: `test:siamaya:manual:e2e:putaway:${component.key}:v1`,
       body: {
-        sourceLocationId: sellable.id,
-        destinationLocationId: rawStore.id,
-        itemId: item.id,
-        quantity: component.quantityPer * DEMO_FLOW_QUANTITY,
-        uom: component.uom,
-        occurredAt: '2026-01-16T10:30:00.000Z',
-        reasonCode: 'demo_putaway_to_production_store',
-        notes: 'Manual demo e2e storage transfer to RM_STORE.'
+        sourceType: 'purchase_order_receipt',
+        purchaseOrderReceiptId: receipt.id,
+        notes: 'Manual demo e2e putaway to RM_STORE.',
+        lines: [
+          {
+            purchaseOrderReceiptLineId: receiptLine.id,
+            toLocationId: rawStore.id,
+            quantity: component.quantityPer * DEMO_FLOW_QUANTITY,
+            uom: component.uom
+          }
+        ]
+      }
+    });
+    await apiRequest('POST', `/putaways/${putaway.id}/post`, {
+      token,
+      idempotencyKey: `test:siamaya:manual:e2e:putaway-post:${component.key}:v1`,
+      body: {
+        actorType: 'system',
+        actorId: 'manual-demo-test'
       }
     });
   }
@@ -610,7 +621,38 @@ async function executeManualDemoFlow({ token, pool, tenantId }) {
     }
   });
 
-  const so = await findSalesOrder(token);
+  const customerResult = await pool.query(
+    `SELECT id
+       FROM customers
+      WHERE tenant_id = $1
+        AND code = $2
+      LIMIT 1`,
+    [tenantId, DEMO_CUSTOMER.code]
+  );
+  const customerId = customerResult.rows[0]?.id;
+  assert.ok(customerId, `customer missing: ${DEMO_CUSTOMER.code}`);
+  const so = await apiRequest('POST', '/sales-orders', {
+    token,
+    body: {
+      soNumber: DEMO_SO.number,
+      customerId,
+      warehouseId: warehouse.id,
+      status: 'submitted',
+      orderDate: '2026-01-17',
+      requestedShipDate: '2026-01-17',
+      shipFromLocationId: fgStage.id,
+      customerReference: DEMO_SO.customerReference,
+      notes: 'Manual demo e2e sales order.',
+      lines: [{
+        lineNumber: 1,
+        itemId: finished.id,
+        uom: DEMO_FINISHED_GOOD.defaultUom,
+        quantityOrdered: DEMO_FLOW_QUANTITY,
+        unitPrice: 3.5,
+        currencyCode: DEMO_CURRENCY_CODE
+      }]
+    }
+  });
   await apiRequest('POST', '/reservations', {
     token,
     idempotencyKey: 'test:siamaya:manual:e2e:reservation:v1',
@@ -710,11 +752,7 @@ test('manual Siamaya chocolate seed creates focused prerequisite state only', { 
     assert.equal(row.currency_code, DEMO_CURRENCY_CODE);
   }
 
-  assert.equal(state.so.length, 1);
-  assert.equal(state.so[0].code, DEMO_CUSTOMER.code);
-  assert.equal(state.so[0].sku, DEMO_FINISHED_GOOD.sku);
-  assert.equal(Number(state.so[0].quantity_ordered), DEMO_FLOW_QUANTITY);
-  assert.equal(state.so[0].uom, 'each');
+  assert.equal(state.so.length, 0);
   assert.equal(Number(state.shipped.quantity_shipped), 0);
 });
 
@@ -768,9 +806,9 @@ test('seeded Siamaya receipt lines have FIFO cost layers and pass QC idempotentl
       const metrics = await readQcIdempotencyMetrics(pool, tenantId, line.id);
       assert.equal(Number(metrics.event_count), 1);
       assertNearlyEqual(metrics.event_qty, Number(line.quantityReceived), 'idempotent QC event quantity');
-      assert.equal(Number(metrics.movement_count), 1);
-      assert.equal(Number(metrics.transfer_link_count), 1);
-      assertNearlyEqual(metrics.transfer_link_qty, Number(line.quantityReceived), 'idempotent QC cost transfer quantity');
+      assert.equal(Number(metrics.movement_count), 0);
+      assert.equal(Number(metrics.transfer_link_count), 0);
+      assertNearlyEqual(metrics.transfer_link_qty, 0, 'receipt QC accept does not transfer cost layers before putaway');
     }
   }
 });
@@ -890,10 +928,10 @@ test('manual Siamaya chocolate seed supports the canonical operational walkthrou
   assert.equal(Number(row.negative_balance_count), 0);
   assert.equal(Number(row.open_backorder_count), 0);
   assert.equal(Number(row.orphan_reservation_count), 0);
-  assert.ok(Number(row.posted_movement_count) >= 1 + DEMO_BOM_COMPONENTS.length + DEMO_BOM_COMPONENTS.length + 2);
+  assert.ok(Number(row.posted_movement_count) >= 1 + DEMO_BOM_COMPONENTS.length + 2);
   assert.equal(Number(row.consumed_line_count), DEMO_BOM_COMPONENTS.length);
   assert.equal(Number(row.finished_receipt_line_count), 1);
-  assert.equal(Number(row.qc_movement_link_count), DEMO_BOM_COMPONENTS.length);
+  assert.equal(Number(row.qc_movement_link_count), 0);
   assert.equal(Number(row.storage_transfer_count), DEMO_BOM_COMPONENTS.length);
 });
 

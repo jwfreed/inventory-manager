@@ -120,6 +120,26 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   return res.payload.id;
 }
 
+async function putawayReceiptLine(token, receiptId, receiptLineId, toLocationId, quantity) {
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
+  return postRes.payload.inventoryMovementId;
+}
+
 async function expectSqlException(queryPromise, code) {
   await assert.rejects(
     queryPromise,
@@ -318,16 +338,8 @@ test('attempted malicious swap link insert is blocked by dimension trigger', asy
     quantity: 5,
     unitCost: 4
   });
-  const qcEventId = await qcAccept(token, receipt.lines[0].id, 5, actorId);
-  const movementRes = await db.query(
-    `SELECT inventory_movement_id
-       FROM qc_inventory_links
-      WHERE tenant_id = $1
-        AND qc_event_id = $2`,
-    [tenantId, qcEventId]
-  );
-  assert.equal(movementRes.rowCount, 1);
-  const transferMovementId = movementRes.rows[0].inventory_movement_id;
+  await qcAccept(token, receipt.lines[0].id, 5, actorId);
+  const transferMovementId = await putawayReceiptLine(token, receipt.id, receipt.lines[0].id, sellable.id, 5);
 
   const lineRes = await db.query(
     `SELECT id, item_id, location_id, COALESCE(quantity_delta_canonical, quantity_delta) AS qty, COALESCE(canonical_uom, uom) AS uom

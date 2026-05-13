@@ -120,6 +120,26 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   return res.payload.id;
 }
 
+async function putawayReceiptLine(token, receiptId, receiptLineId, toLocationId, quantity) {
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
+  return postRes.payload.inventoryMovementId;
+}
+
 async function createCustomer(tenantId, db) {
   const id = randomUUID();
   const code = `C-${randomUUID().slice(0, 8)}`;
@@ -191,16 +211,8 @@ test('transfer relocation splits FIFO layers and conserves line costs', async ()
     unitCost: 6
   });
 
-  const qcEventId = await qcAccept(token, receipt2.lines[0].id, 7, actorId);
-  const linkRes = await db.query(
-    `SELECT inventory_movement_id
-       FROM qc_inventory_links
-      WHERE tenant_id = $1
-        AND qc_event_id = $2`,
-    [tenantId, qcEventId]
-  );
-  assert.equal(linkRes.rowCount, 1);
-  const transferMovementId = linkRes.rows[0].inventory_movement_id;
+  await qcAccept(token, receipt2.lines[0].id, 10, actorId);
+  const transferMovementId = await putawayReceiptLine(token, receipt2.id, receipt2.lines[0].id, sellable.id, 7);
 
   const transferLinks = await db.query(
     `SELECT quantity, unit_cost
@@ -290,7 +302,8 @@ test('transferred FIFO layers drive downstream shipment COGS at destination', as
     unitCost: 6
   });
 
-  await qcAccept(token, receipt2.lines[0].id, 7, actorId);
+  await qcAccept(token, receipt2.lines[0].id, 10, actorId);
+  await putawayReceiptLine(token, receipt2.id, receipt2.lines[0].id, sellable.id, 7);
 
   const customerId = await createCustomer(tenantId, db);
   const order = await createSalesOrder(token, {
@@ -450,16 +463,8 @@ test('transfer reversal is blocked when transferred destination layers were cons
     quantity: 6,
     unitCost: 5
   });
-  const qcEventId = await qcAccept(token, receipt.lines[0].id, 6, actorId);
-  const transferRes = await db.query(
-    `SELECT inventory_movement_id
-       FROM qc_inventory_links
-      WHERE tenant_id = $1
-        AND qc_event_id = $2`,
-    [tenantId, qcEventId]
-  );
-  assert.equal(transferRes.rowCount, 1);
-  const transferMovementId = transferRes.rows[0].inventory_movement_id;
+  await qcAccept(token, receipt.lines[0].id, 6, actorId);
+  const transferMovementId = await putawayReceiptLine(token, receipt.id, receipt.lines[0].id, sellable.id, 6);
 
   const adjustmentCreate = await apiRequest('POST', '/inventory-adjustments', {
     token,

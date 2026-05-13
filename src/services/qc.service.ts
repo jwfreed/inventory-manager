@@ -63,9 +63,11 @@ type QcPreparedWorkflowState = {
   itemId: string;
   sourceLocationId: string;
   destinationLocationId: string;
+  sourceWarehouseId: string | null;
+  destinationWarehouseId: string | null;
   sourceBinId: string;
   destinationBinId: string;
-  preparedTransfer: PreparedTransferMutation;
+  preparedTransfer: PreparedTransferMutation | null;
 };
 
 type ReceiptQcWorkflowState = QcPreparedWorkflowState & {
@@ -86,6 +88,7 @@ type ExecutionLineQcWorkflowState = QcPreparedWorkflowState & {
 };
 
 type QcTransferExecution = Awaited<ReturnType<typeof executeTransferInventoryMutation>>;
+type MaybeQcTransferExecution = QcTransferExecution | null;
 
 function qcRetryDebugEnabled() {
   return process.env.NODE_ENV === 'test' || process.env.DEBUG_QC_TX_RETRY === 'true';
@@ -151,6 +154,35 @@ async function moveReceiptAllocationsFromQa(params: {
       throw new Error('QC_RECEIPT_ALLOCATION_INSUFFICIENT_QA');
     }
     throw error;
+  }
+}
+
+async function assertReceiptQcAcceptCostLayersAvailable(params: {
+  client: any;
+  tenantId: string;
+  itemId: string;
+  sourceLocationId: string;
+  uom: string;
+  quantity: number;
+}) {
+  const result = await params.client.query(
+    `SELECT remaining_quantity
+       FROM inventory_cost_layers
+      WHERE tenant_id = $1
+        AND item_id = $2
+        AND location_id = $3
+        AND uom = $4
+        AND remaining_quantity > 0
+        AND voided_at IS NULL
+      ORDER BY layer_date ASC, id ASC
+      FOR UPDATE`,
+    [params.tenantId, params.itemId, params.sourceLocationId, params.uom]
+  );
+  const totalAvailable = roundQuantity(
+    result.rows.reduce((sum: number, row: any) => sum + toNumber(row.remaining_quantity ?? 0), 0)
+  );
+  if (totalAvailable + 1e-6 < roundQuantity(params.quantity)) {
+    throw new Error('TRANSFER_INSUFFICIENT_COST_LAYERS');
   }
 }
 
@@ -309,9 +341,68 @@ async function prepareQcTransferWorkflowState(params: {
     itemId: params.itemId,
     sourceLocationId,
     destinationLocationId,
+    sourceWarehouseId,
+    destinationWarehouseId,
     sourceBinId,
     destinationBinId,
     preparedTransfer
+  };
+}
+
+async function prepareReceiptAcceptClassificationWorkflowState(params: {
+  tenantId: string;
+  data: QcEventInput;
+  enteredQty: number;
+  client: any;
+  sourceId: string;
+  itemId: string | null;
+  locationId: string | null;
+}): Promise<QcPreparedWorkflowState> {
+  if (!params.locationId) throw new Error('QC_LOCATION_REQUIRED');
+  if (!params.itemId) throw new Error('QC_ITEM_ID_REQUIRED');
+
+  let sourceLocationId: string;
+  try {
+    sourceLocationId = await resolveDefaultLocationForRole(params.tenantId, params.locationId, 'QA', params.client);
+  } catch (error) {
+    if ((error as Error)?.message === 'WAREHOUSE_DEFAULT_LOCATION_REQUIRED') {
+      throw new Error('QC_QA_LOCATION_REQUIRED');
+    }
+    throw error;
+  }
+
+  const sourceWarehouseId = await resolveWarehouseIdForLocation(params.tenantId, sourceLocationId, params.client);
+  const sourceBinId = (
+    await resolveInventoryBin({
+      client: params.client,
+      tenantId: params.tenantId,
+      warehouseId: sourceWarehouseId,
+      locationId: sourceLocationId,
+      binId: params.data.sourceBinId ?? null,
+      allowDefaultBinResolution: true
+    })
+  ).id;
+
+  await assertReceiptQcAcceptCostLayersAvailable({
+    client: params.client,
+    tenantId: params.tenantId,
+    itemId: params.itemId,
+    sourceLocationId,
+    uom: params.data.uom,
+    quantity: params.enteredQty
+  });
+
+  return {
+    sourceType: 'receipt',
+    sourceId: params.sourceId,
+    itemId: params.itemId,
+    sourceLocationId,
+    destinationLocationId: sourceLocationId,
+    sourceWarehouseId,
+    destinationWarehouseId: sourceWarehouseId,
+    sourceBinId,
+    destinationBinId: sourceBinId,
+    preparedTransfer: null
   };
 }
 
@@ -471,6 +562,9 @@ async function executeQcTransferBoundary(params: {
   client: any;
   lockContext: any;
 }) {
+  if (!params.workflowState.preparedTransfer) {
+    throw new Error('QC_TRANSFER_NOT_REQUIRED');
+  }
   const transferExecution = await executeTransferInventoryMutation(
     params.workflowState.preparedTransfer,
     params.client,
@@ -534,25 +628,25 @@ function buildCreateQcEventExecutionResult(params: {
   data: QcEventInput;
   enteredQty: number;
   workflowState: QcPreparedWorkflowState;
-  transferExecution: QcTransferExecution;
+  transferExecution: MaybeQcTransferExecution;
 }) {
   return {
     responseBody: {
       eventId: params.created.id,
       event: mapQcEvent(params.created),
-      movementId: params.transferExecution.result.movementId,
+      movementId: params.transferExecution?.result.movementId ?? null,
       sourceLocationId: params.workflowState.sourceLocationId,
       destinationLocationId: params.workflowState.destinationLocationId,
       itemId: params.workflowState.itemId,
       quantity: params.enteredQty,
       uom: params.data.uom,
-      sourceWarehouseId: params.workflowState.preparedTransfer.sourceWarehouseId,
-      destinationWarehouseId: params.workflowState.preparedTransfer.destinationWarehouseId,
-      replayed: !params.transferExecution.result.created
+      sourceWarehouseId: params.workflowState.sourceWarehouseId,
+      destinationWarehouseId: params.workflowState.destinationWarehouseId,
+      replayed: params.transferExecution ? !params.transferExecution.result.created : false
     },
-    responseStatus: params.transferExecution.result.created ? 201 : 200,
-    events: params.transferExecution.events,
-    projectionOps: params.transferExecution.projectionOps
+    responseStatus: params.transferExecution ? (params.transferExecution.result.created ? 201 : 200) : 201,
+    events: params.transferExecution?.events ?? [],
+    projectionOps: params.transferExecution?.projectionOps ?? []
   };
 }
 
@@ -589,24 +683,28 @@ async function executeBaseQcWorkflow(params: {
   if (params.data.eventType === 'reject' && params.workflowState.sourceType === 'receipt') {
     await createNcr(params.tenantId, created.id, params.client);
   }
-  const transferExecution = await executeQcTransferBoundary({
-    tenantId: params.tenantId,
-    qcEventId: created.id,
-    occurredAt: params.occurredAt,
-    workflowState: params.workflowState,
-    client: params.client,
-    lockContext: params.lockContext
-  });
-  await recordQcNegativeOverrideAuditIfNeeded({
-    tenantId: params.tenantId,
-    data: params.data,
-    enteredQty: params.enteredQty,
-    occurredAt: params.occurredAt,
-    createdId: created.id,
-    workflowState: params.workflowState,
-    transferExecution,
-    client: params.client
-  });
+  const transferExecution = params.workflowState.preparedTransfer
+    ? await executeQcTransferBoundary({
+        tenantId: params.tenantId,
+        qcEventId: created.id,
+        occurredAt: params.occurredAt,
+        workflowState: params.workflowState,
+        client: params.client,
+        lockContext: params.lockContext
+      })
+    : null;
+  if (transferExecution) {
+    await recordQcNegativeOverrideAuditIfNeeded({
+      tenantId: params.tenantId,
+      data: params.data,
+      enteredQty: params.enteredQty,
+      occurredAt: params.occurredAt,
+      createdId: created.id,
+      workflowState: params.workflowState,
+      transferExecution,
+      client: params.client
+    });
+  }
   return { created, transferExecution };
 }
 
@@ -652,19 +750,29 @@ async function prepareReceiptQcWorkflowState(
     throw new Error('QC_EXCEEDS_RECEIPT');
   }
 
-  const workflowState = await prepareQcTransferWorkflowState({
-    tenantId: params.tenantId,
-    data: params.data,
-    enteredQty: params.enteredQty,
-    qcEventId: params.qcEventId,
-    occurredAt: params.occurredAt,
-    idempotencyKey: params.idempotencyKey,
-    client: params.client,
-    sourceType: 'receipt',
-    sourceId: receiptLineId,
-    itemId: line.item_id,
-    locationId: line.received_to_location_id
-  });
+  const workflowState = params.data.eventType === 'accept'
+    ? await prepareReceiptAcceptClassificationWorkflowState({
+        tenantId: params.tenantId,
+        data: params.data,
+        enteredQty: params.enteredQty,
+        client: params.client,
+        sourceId: receiptLineId,
+        itemId: line.item_id,
+        locationId: line.received_to_location_id
+      })
+    : await prepareQcTransferWorkflowState({
+        tenantId: params.tenantId,
+        data: params.data,
+        enteredQty: params.enteredQty,
+        qcEventId: params.qcEventId,
+        occurredAt: params.occurredAt,
+        idempotencyKey: params.idempotencyKey,
+        client: params.client,
+        sourceType: 'receipt',
+        sourceId: receiptLineId,
+        itemId: line.item_id,
+        locationId: line.received_to_location_id
+      });
   const allocationContext = await validateOrRebuildReceiptAllocationsForMutation({
     client: params.client,
     tenantId: params.tenantId,
@@ -807,7 +915,7 @@ async function applyReceiptQcSideEffects(params: {
   enteredQty: number;
   occurredAt: Date;
   workflowState: ReceiptQcWorkflowState;
-  transferExecution: QcTransferExecution;
+  transferExecution: MaybeQcTransferExecution;
   client: any;
 }) {
   const receiptResult = await params.client.query(
@@ -822,38 +930,40 @@ async function applyReceiptQcSideEffects(params: {
     throw new Error('QC_LINE_NOT_FOUND');
   }
 
-  const movementLineResult = await params.client.query(
-    `SELECT id
-       FROM inventory_movement_lines
-      WHERE movement_id = $1
-        AND tenant_id = $2
-        AND quantity_delta > 0
-      ORDER BY COALESCE(event_timestamp, created_at) DESC, id DESC
-      LIMIT 1`,
-    [params.transferExecution.result.movementId, params.tenantId]
-  );
-  const movementLineId = movementLineResult.rows[0]?.id;
-  if (!movementLineId) {
-    throw new Error('QC_TRANSFER_LINE_MISSING');
-  }
+  if (params.data.eventType !== 'accept') {
+    if (!params.transferExecution) {
+      throw new Error('QC_TRANSFER_REQUIRED');
+    }
+    const movementLineResult = await params.client.query(
+      `SELECT id
+         FROM inventory_movement_lines
+        WHERE movement_id = $1
+          AND tenant_id = $2
+          AND quantity_delta > 0
+        ORDER BY COALESCE(event_timestamp, created_at) DESC, id DESC
+        LIMIT 1`,
+      [params.transferExecution.result.movementId, params.tenantId]
+    );
+    const movementLineId = movementLineResult.rows[0]?.id;
+    if (!movementLineId) {
+      throw new Error('QC_TRANSFER_LINE_MISSING');
+    }
 
-  await moveReceiptAllocationsFromQa({
-    client: params.client,
-    tenantId: params.tenantId,
-    receiptLineId: params.workflowState.receiptLineId,
-    quantity: params.enteredQty,
-    sourceBinId: params.workflowState.sourceBinId,
-    destinationLocationId: params.workflowState.destinationLocationId,
-    destinationBinId: params.workflowState.destinationBinId,
-    movementId: params.transferExecution.result.movementId,
-    movementLineId,
-    occurredAt: params.occurredAt,
-    allocationContext: params.workflowState.allocationContext,
-    destinationStatus:
-      params.data.eventType === 'accept'
-        ? RECEIPT_ALLOCATION_STATUSES.AVAILABLE
-        : RECEIPT_ALLOCATION_STATUSES.HOLD
-  });
+    await moveReceiptAllocationsFromQa({
+      client: params.client,
+      tenantId: params.tenantId,
+      receiptLineId: params.workflowState.receiptLineId,
+      quantity: params.enteredQty,
+      sourceBinId: params.workflowState.sourceBinId,
+      destinationLocationId: params.workflowState.destinationLocationId,
+      destinationBinId: params.workflowState.destinationBinId,
+      movementId: params.transferExecution.result.movementId,
+      movementLineId,
+      occurredAt: params.occurredAt,
+      allocationContext: params.workflowState.allocationContext,
+      destinationStatus: RECEIPT_ALLOCATION_STATUSES.HOLD
+    });
+  }
 
   const lifecycleGuard = await params.client.query(
     `WITH receipt_qc AS (
@@ -1066,7 +1176,7 @@ async function createReceiptQcEvent(params: CreateQcEventCommandParams) {
         }),
       lockTargets: async (client) => {
         workflowState = await prepareReceiptQcWorkflowState({ ...params, client });
-        return buildTransferLockTargets(workflowState.preparedTransfer);
+        return workflowState.preparedTransfer ? buildTransferLockTargets(workflowState.preparedTransfer) : [];
       },
       execute: async ({ client, lockContext }) => {
         if (!workflowState) {
@@ -1135,6 +1245,9 @@ async function createWorkOrderQcEvent(params: CreateQcEventCommandParams) {
         }),
       lockTargets: async (client) => {
         workflowState = await prepareWorkOrderQcWorkflowState({ ...params, client });
+        if (!workflowState.preparedTransfer) {
+          throw new Error('QC_TRANSFER_REQUIRED');
+        }
         return buildTransferLockTargets(workflowState.preparedTransfer);
       },
       execute: async ({ client, lockContext }) => {
@@ -1204,6 +1317,9 @@ async function createExecutionLineQcEvent(params: CreateQcEventCommandParams) {
         }),
       lockTargets: async (client) => {
         workflowState = await prepareExecutionLineQcWorkflowState({ ...params, client });
+        if (!workflowState.preparedTransfer) {
+          throw new Error('QC_TRANSFER_REQUIRED');
+        }
         return buildTransferLockTargets(workflowState.preparedTransfer);
       },
       execute: async ({ client, lockContext }) => {

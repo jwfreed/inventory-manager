@@ -9,6 +9,7 @@ require('ts-node/register/transpile-only');
 require('tsconfig-paths/register');
 
 const { closePurchaseOrderReceipt, closePurchaseOrder } = require('../../src/services/closeout.service.ts');
+const { createPutaway, postPutaway } = require('../../src/services/putaways.service.ts');
 const { buildReceiptCloseoutBlockers } = require('../../src/domain/receipts/receiptCloseoutPolicy.ts');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +55,29 @@ async function createReceiptInQa(harness, { quantity, unitCost = 5 }) {
   };
 }
 
+async function postPutawayForReceiptLine(harness, fixture, quantity) {
+  const putaway = await createPutaway(
+    harness.tenantId,
+    {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: fixture.receipt.id,
+      lines: [
+        {
+          purchaseOrderReceiptLineId: fixture.receiptLineId,
+          toLocationId: harness.topology.defaults.SELLABLE.id,
+          uom: 'each',
+          quantity
+        }
+      ]
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `clo-putaway:${fixture.receiptLineId}:${quantity}:${randomUUID()}` }
+  );
+  return postPutaway(harness.tenantId, putaway.id, {
+    actor: { type: 'system', id: null }
+  });
+}
+
 test('clean receipt → full QC accept → closeout succeeds with no discrepancies', { timeout: 120000 }, async () => {
   const harness = await createServiceHarness({
     tenantPrefix: 'truth-clo-clean',
@@ -63,12 +87,13 @@ test('clean receipt → full QC accept → closeout succeeds with no discrepanci
 
   const fixture = await createReceiptInQa(harness, { quantity: 10 });
 
-  // QC accept all units → moves from QA to SELLABLE
+  // QC accept all units, then put away before closeout.
   await harness.qcAcceptReceiptLine({
     receiptLineId: fixture.receiptLineId,
     quantity: 10,
     uom: 'each'
   });
+  await postPutawayForReceiptLine(harness, fixture, 10);
 
   const result = await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
     actorType: 'system',
@@ -176,6 +201,7 @@ test('physical count discrepancy → adjustment resolution → closeout creates 
     quantity: 10,
     uom: 'each'
   });
+  await postPutawayForReceiptLine(harness, fixture, 10);
 
   // Physical count finds only 8 → discrepancy of -2
   const result = await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
@@ -240,6 +266,7 @@ test('already-closed receipt rejects double-close', { timeout: 120000 }, async (
     quantity: 5,
     uom: 'each'
   });
+  await postPutawayForReceiptLine(harness, fixture, 5);
 
   await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {
     actorType: 'system',
@@ -304,12 +331,17 @@ test('PO-level close requires all receipts closed', { timeout: 120000 }, async (
     }
   );
 
-  // QC accept and close the receipt
+  // QC accept, put away, and close the receipt
   await harness.qcAcceptReceiptLine({
     receiptLineId: receipt.receipt.lines[0].id,
     quantity: 10,
     uom: 'each'
   });
+  await postPutawayForReceiptLine(
+    harness,
+    { receipt: receipt.receipt, receiptLineId: receipt.receipt.lines[0].id },
+    10
+  );
 
   await closePurchaseOrderReceipt(tenantId, receipt.receipt.id, {
     actorType: 'system',
@@ -340,6 +372,7 @@ test('closeout adjustment resolution preserves ledger rebuild parity', { timeout
     quantity: 12,
     uom: 'each'
   });
+  await postPutawayForReceiptLine(harness, fixture, 12);
 
   // Physical count: only 9 found
   await closePurchaseOrderReceipt(tenantId, fixture.receipt.id, {

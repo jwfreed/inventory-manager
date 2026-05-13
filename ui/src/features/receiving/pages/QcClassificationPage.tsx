@@ -27,6 +27,7 @@ export default function QcClassificationPage() {
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const { receiptId } = useParams<{ receiptId?: string }>()
+  const [continuingToPutaway, setContinuingToPutaway] = useState(false)
 
   useEffect(() => {
     if (receiptId && receiptId !== ctx.receiptIdForQc) {
@@ -433,10 +434,17 @@ export default function QcClassificationPage() {
                       action={
                         <Button
                           size="sm"
-                          onClick={() => {
+                          disabled={continuingToPutaway}
+                          onClick={async () => {
                             if (ctx.receiptIdForQc) {
-                              ctx.updateReceivingParams({ receiptId: ctx.receiptIdForQc })
-                              navigate(`/receiving/putaway?receiptId=${ctx.receiptIdForQc}`)
+                              setContinuingToPutaway(true)
+                              try {
+                                ctx.updateReceivingParams({ receiptId: ctx.receiptIdForQc })
+                                await ctx.refreshReceiptDetail(ctx.receiptIdForQc)
+                                navigate(`/receiving/putaway?receiptId=${ctx.receiptIdForQc}`)
+                              } finally {
+                                setContinuingToPutaway(false)
+                              }
                             }
                           }}
                         >

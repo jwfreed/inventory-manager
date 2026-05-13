@@ -46,10 +46,10 @@ async function waitForOnHand(tenantId, itemId, locationId, expected, label) {
         `SELECT on_hand FROM inventory_balance WHERE tenant_id = $1 AND item_id = $2 AND location_id = $3 AND uom = $4`,
         [tenantId, itemId, locationId, 'each']
       );
-      if (res.rowCount === 0) return null;
+      if (res.rowCount === 0) return 0;
       return Number(res.rows[0].on_hand);
     },
-    (value) => value !== null && Math.abs(Number(value) - expected) < 1e-6,
+    (value) => Math.abs(Number(value) - expected) < 1e-6,
     { label }
   );
 }
@@ -182,40 +182,31 @@ test('QC accept is idempotent and creates no cost layers', async () => {
   const costAfterSecond = await countReceiptLayers();
   assert.equal(costAfterSecond, costAfterFirst);
 
-  // Verify only one transfer movement via qc_inventory_links
+  // Receipt QC accept is classification-only; it must not create a transfer.
   const linksResult = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcEventId]
   );
-  assert.equal(linksResult.rowCount, 1, 'Should have exactly one transfer movement');
-  const movementId = linksResult.rows[0].inventory_movement_id;
+  assert.equal(linksResult.rowCount, 0, 'Receipt QC accept must not create a transfer movement');
 
-  // Verify it's a transfer
-  const movementResult = await db.query(
-    `SELECT movement_type, status FROM inventory_movements WHERE id = $1`,
-    [movementId]
-  );
-  assert.equal(movementResult.rows[0].movement_type, 'transfer');
-  assert.equal(movementResult.rows[0].status, 'posted');
-
-  // Verify QA is 0, SELLABLE is 10
+  // Verify accepted stock remains in QA and is not sellable before putaway.
   const qaOnHandAfter = await waitForOnHand(
     tenantId,
     itemId,
     qaLocation.id,
-    0,
+    10,
     'qa on_hand after qc accept'
   );
-  assert.ok(Math.abs(Number(qaOnHandAfter)) < 1e-6);
+  assert.ok(Math.abs(Number(qaOnHandAfter) - 10) < 1e-6);
 
   const sellableOnHandAfter = await waitForOnHand(
     tenantId,
     itemId,
     sellableLocationId,
-    10,
+    0,
     'sellable on_hand after qc accept'
   );
-  assert.ok(Math.abs(Number(sellableOnHandAfter) - 10) < 1e-6);
+  assert.ok(Math.abs(Number(sellableOnHandAfter)) < 1e-6);
 });
 
 test('QC partial split: accept + hold', async () => {
@@ -308,24 +299,24 @@ test('QC partial split: accept + hold', async () => {
   });
   assert.equal(qcHoldRes.res.status, 201);
 
-  // Verify balances
+  // Verify balances: accept stays in QA, hold moves to HOLD.
   const qaOnHand = await waitForOnHand(
     tenantId,
     itemId,
     qaLocation.id,
-    0,
+    6,
     'qa on_hand after qc split'
   );
-  assert.ok(Math.abs(Number(qaOnHand)) < 1e-6, 'QA should be empty');
+  assert.ok(Math.abs(Number(qaOnHand) - 6) < 1e-6, 'QA should retain accepted quantity');
 
   const sellableOnHand = await waitForOnHand(
     tenantId,
     itemId,
     sellableLocationId,
-    6,
+    0,
     'sellable on_hand after qc split'
   );
-  assert.ok(Math.abs(Number(sellableOnHand) - 6) < 1e-6, 'SELLABLE should be 6');
+  assert.ok(Math.abs(Number(sellableOnHand)) < 1e-6, 'SELLABLE should remain 0 before putaway');
 
   const holdOnHand = await waitForOnHand(
     tenantId,
@@ -336,12 +327,12 @@ test('QC partial split: accept + hold', async () => {
   );
   assert.ok(Math.abs(Number(holdOnHand) - 4) < 1e-6, 'HOLD should be 4');
 
-  // Verify two transfer movements via qc_inventory_links
+  // Verify only the hold disposition created a transfer movement.
   const acceptLinks = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,
     [tenantId, qcAcceptRes.payload.id]
   );
-  assert.equal(acceptLinks.rowCount, 1, 'Accept should have one movement');
+  assert.equal(acceptLinks.rowCount, 0, 'Accept should not have a movement');
 
   const holdLinks = await db.query(
     `SELECT inventory_movement_id FROM qc_inventory_links WHERE tenant_id = $1 AND qc_event_id = $2`,

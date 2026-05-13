@@ -2,7 +2,7 @@
  * WP5: Putaway allocation eligibility — unit contract for calculatePutawayAvailability.
  *
  * Invariants under test:
- *   1. Only AVAILABLE (QC-accepted) quantity flows to putaway.
+ *   1. Only QC-accepted quantity flows to putaway planning.
  *   2. HOLD quantity is excluded regardless of accept quantity.
  *   3. REWORK and DISCARDED quantities (derived from HOLD via hold_disposition_events)
  *      are excluded — they reduce net_hold, which does NOT inflate qcAllowed.
@@ -44,7 +44,7 @@ function makeTotals({ posted = 0, pending = 0, qa = 0, hold = 0 } = {}) {
   return { posted, pending, qa, hold };
 }
 
-// ─── 1. AVAILABLE only: full receipt accepted, no hold ────────────────────────
+// ─── 1. Full receipt accepted, no hold ───────────────────────────────────────
 
 test('full accept, no hold: all qty eligible for putaway', () => {
   const result = calculatePutawayAvailability(

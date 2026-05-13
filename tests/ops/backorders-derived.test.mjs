@@ -160,7 +160,7 @@ async function receiveIntoQa(token, vendorId, itemId, shipToLocationId, quantity
     }
   });
   assert.equal(receiptRes.res.status, 201);
-  return receiptRes.payload.lines[0].id;
+  return { receiptId: receiptRes.payload.id, receiptLineId: receiptRes.payload.lines[0].id };
 }
 
 async function qcAccept(token, receiptLineId, quantity, actorId) {
@@ -176,6 +176,25 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
     }
   });
   assert.equal(res.res.status, 201);
+}
+
+async function putawayReceiptLine(token, receiptId, receiptLineId, toLocationId, quantity) {
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
 }
 
 async function createReservation(token, lineId, itemId, warehouseId, locationId, quantity) {
@@ -229,7 +248,7 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   const initialBackorder = await getLineBackorder(token, orderId);
   assert.ok(Math.abs(initialBackorder - 10) < 1e-6);
 
-  const receiptLineId = await receiveIntoQa(token, vendorId, itemId, sellable.id, 10);
+  const { receiptId, receiptLineId } = await receiveIntoQa(token, vendorId, itemId, sellable.id, 10);
   const afterQaReceipt = await waitForCondition(
     () => getLineBackorder(token, orderId),
     (value) => Math.abs(value - 10) < 1e-6,
@@ -240,10 +259,18 @@ test('Derived backorder tracks sellable supply and commitments', async () => {
   await qcAccept(token, receiptLineId, 10, userId);
   const afterQcAccept = await waitForCondition(
     () => getLineBackorder(token, orderId),
-    (value) => Math.abs(value) < 1e-6,
-    { label: 'backorder after QC accept' }
+    (value) => Math.abs(value - 10) < 1e-6,
+    { label: 'backorder after QC accept before putaway' }
   );
-  assert.ok(Math.abs(afterQcAccept) < 1e-6, `Expected backorder to clear after QC accept`);
+  assert.ok(Math.abs(afterQcAccept - 10) < 1e-6, `Expected backorder to remain until putaway`);
+
+  await putawayReceiptLine(token, receiptId, receiptLineId, sellable.id, 10);
+  const afterPutaway = await waitForCondition(
+    () => getLineBackorder(token, orderId),
+    (value) => Math.abs(value) < 1e-6,
+    { label: 'backorder after putaway' }
+  );
+  assert.ok(Math.abs(afterPutaway) < 1e-6, `Expected backorder to clear after putaway`);
 
   const reservationId = await createReservation(token, lineId, itemId, warehouse.id, sellable.id, 2);
   const afterReserve = await waitForCondition(

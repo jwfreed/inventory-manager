@@ -192,7 +192,7 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
         AND movement_type = 'transfer'`,
     [tenantId, qcRes.payload.id]
   );
-  assert.equal(Number(movementRes.rows[0].count), 1);
+  assert.equal(Number(movementRes.rows[0].count), 0);
 
   const costRes2 = await db.query(
     `SELECT COUNT(*) AS count
@@ -209,10 +209,10 @@ test('QC accept retry is idempotent and does not create extra cost layers', asyn
     itemId,
     warehouseId,
     qaLocationId,
-    0,
+    10,
     'qa on_hand after qc accept'
   );
-  assert.ok(Math.abs(Number(qaOnHand)) < 1e-6);
+  assert.ok(Math.abs(Number(qaOnHand) - 10) < 1e-6);
 });
 
 test('QC partial split routes to accept and hold without new cost layers', async () => {
@@ -265,20 +265,20 @@ test('QC partial split routes to accept and hold without new cost layers', async
     itemId,
     warehouseId,
     qaLocationId,
-    0,
+    6,
     'qa on_hand after split'
   );
-  assert.ok(Math.abs(Number(qaOnHand)) < 1e-6);
+  assert.ok(Math.abs(Number(qaOnHand) - 6) < 1e-6);
 
   const sellableOnHand = await waitForSnapshot(
     token,
     itemId,
     warehouseId,
     sellableLocationId,
-    6,
+    0,
     'sellable on_hand after split'
   );
-  assert.ok(Math.abs(Number(sellableOnHand) - 6) < 1e-6);
+  assert.ok(Math.abs(Number(sellableOnHand)) < 1e-6);
 
   const holdOnHand = await waitForSnapshot(
     token,

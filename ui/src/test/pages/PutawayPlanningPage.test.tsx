@@ -179,6 +179,64 @@ describe('PutawayPlanningPage workflow completion', () => {
     expect(screen.getByRole('button', { name: 'Back to receiving queue' })).toBeInTheDocument()
   })
 
+  it('renders the planning form for QC-accepted inventory that is still awaiting putaway', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        putawayQuery: {
+          data: null,
+          isLoading: false,
+          isError: false,
+          error: null,
+        },
+        putawayId: '',
+        putawayReady: true,
+        putawayHasAvailable: true,
+        receiptLineOptions: [
+          {
+            value: 'receipt-line-1',
+            label: 'COCOA · 30,000 g',
+            availableQuantity: 30000,
+            uom: 'g',
+          },
+        ],
+        receiptQuery: {
+          data: {
+            id: 'receipt-1',
+            receiptNumber: 'R-1001',
+            purchaseOrderId: 'po-1',
+            status: 'posted',
+            receivedAt: '2026-05-11T00:00:00Z',
+            lines: [
+              {
+                id: 'receipt-line-1',
+                purchaseOrderReceiptId: 'receipt-1',
+                purchaseOrderLineId: 'po-line-1',
+                itemSku: 'COCOA',
+                itemName: 'Cocoa powder',
+                quantityReceived: 30000,
+                expectedQuantity: 30000,
+                uom: 'g',
+                qcSummary: {
+                  remainingUninspectedQuantity: 0,
+                  breakdown: { accept: 30000, hold: 0, reject: 0 },
+                },
+                putawayAcceptedQuantity: 30000,
+                availableForNewPutaway: 30000,
+                remainingQuantityToPutaway: 30000,
+                putawayBlockedReason: null,
+              },
+            ],
+          },
+        },
+      }) as any,
+    )
+
+    renderPageWithRoutes()
+
+    expect(screen.getByText('putaway-lines-editor')).toBeInTheDocument()
+    expect(screen.queryByText('Putaway not available')).not.toBeInTheDocument()
+  })
+
   it('explains that QC acceptance is required before putaway is available', () => {
     mockedUseReceivingContext.mockReturnValue(
       buildContextValue({
@@ -225,6 +283,57 @@ describe('PutawayPlanningPage workflow completion', () => {
     expect(screen.getByText('Putaway not available')).toBeInTheDocument()
     expect(screen.getByText('Complete QC classification and accept inventory before putaway.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue QC' })).toBeInTheDocument()
+  })
+
+  it('keeps hold-only receipt lines blocked from putaway planning', () => {
+    mockedUseReceivingContext.mockReturnValue(
+      buildContextValue({
+        putawayQuery: {
+          data: null,
+          isLoading: false,
+          isError: false,
+          error: null,
+        },
+        putawayId: '',
+        putawayReady: false,
+        putawayHasAvailable: false,
+        receiptTotals: { received: 30000, accepted: 0, hold: 30000, reject: 0, remaining: 0 },
+        receiptQuery: {
+          data: {
+            id: 'receipt-1',
+            receiptNumber: 'R-1001',
+            purchaseOrderId: 'po-1',
+            status: 'posted',
+            receivedAt: '2026-05-11T00:00:00Z',
+            lines: [
+              {
+                id: 'receipt-line-1',
+                purchaseOrderReceiptId: 'receipt-1',
+                purchaseOrderLineId: 'po-line-1',
+                itemSku: 'COCOA',
+                itemName: 'Cocoa powder',
+                quantityReceived: 30000,
+                expectedQuantity: 30000,
+                uom: 'g',
+                qcSummary: {
+                  remainingUninspectedQuantity: 0,
+                  breakdown: { accept: 0, hold: 30000, reject: 0 },
+                },
+                putawayAcceptedQuantity: 0,
+                availableForNewPutaway: 0,
+                remainingQuantityToPutaway: 0,
+                putawayBlockedReason: 'Receipt line is on QC hold with no accepted quantity.',
+              },
+            ],
+          },
+        },
+      }) as any,
+    )
+
+    renderPageWithRoutes()
+
+    expect(screen.getByText('Putaway not available')).toBeInTheDocument()
+    expect(screen.getByText('Complete QC classification and accept inventory before putaway.')).toBeInTheDocument()
   })
 
   it('routes a QC-blocked putaway back to the receipt QC page', () => {

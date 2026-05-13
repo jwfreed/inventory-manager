@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { createServiceHarness } from '../helpers/service-harness.mjs';
+
+const require = createRequire(import.meta.url);
+require('ts-node/register/transpile-only');
+require('tsconfig-paths/register');
+
+const { createPutaway, postPutaway } = require('../../src/services/putaways.service.ts');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cross-Workflow Conservation Truth Tests
@@ -47,17 +54,40 @@ test('receipt → QC accept → transfer → shipment pipeline conserves total s
 
   assert.equal(await harness.readOnHand(item.id, topology.defaults.QA.id), 20, 'QA has 20 after receipt');
 
-  // Step 2: QC accept 15 of 20 → moves from QA to SELLABLE
+  // Step 2: QC accept all 20 → classification only; accepted stock remains in QA.
   await harness.qcAcceptReceiptLine({
     receiptLineId: receipt.receipt.lines[0].id,
-    quantity: 15,
+    quantity: 20,
     uom: 'each'
   });
 
-  assert.equal(await harness.readOnHand(item.id, topology.defaults.QA.id), 5, 'QA has 5 remaining');
-  assert.equal(await harness.readOnHand(item.id, topology.defaults.SELLABLE.id), 15, 'SELLABLE has 15');
+  assert.equal(await harness.readOnHand(item.id, topology.defaults.QA.id), 20, 'QA still has 20 before putaway');
+  assert.equal(await harness.readOnHand(item.id, topology.defaults.SELLABLE.id), 0, 'SELLABLE remains 0 before putaway');
 
-  // Step 3: Transfer 8 from SELLABLE to store
+  // Step 3: Put away accepted 15 from QA to SELLABLE.
+  const putaway = await createPutaway(
+    tenantId,
+    {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: receipt.receipt.id,
+      lines: [
+        {
+          purchaseOrderReceiptLineId: receipt.receipt.lines[0].id,
+          toLocationId: topology.defaults.SELLABLE.id,
+          uom: 'each',
+          quantity: 15
+        }
+      ]
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `xwf-putaway:${randomUUID()}` }
+  );
+  await postPutaway(tenantId, putaway.id, { actor: { type: 'system', id: null } });
+
+  assert.equal(await harness.readOnHand(item.id, topology.defaults.QA.id), 5, 'QA has 5 accepted/unputawayed');
+  assert.equal(await harness.readOnHand(item.id, topology.defaults.SELLABLE.id), 15, 'SELLABLE has 15 after putaway');
+
+  // Step 4: Transfer 8 from SELLABLE to store
   await harness.postTransfer({
     sourceLocationId: topology.defaults.SELLABLE.id,
     destinationLocationId: store.sellable.id,
@@ -72,7 +102,7 @@ test('receipt → QC accept → transfer → shipment pipeline conserves total s
   assert.equal(await harness.readOnHand(item.id, topology.defaults.SELLABLE.id), 7, 'SELLABLE has 7');
   assert.equal(await harness.readOnHand(item.id, store.sellable.id), 8, 'store has 8');
 
-  // Step 4: Ship 3 from store
+  // Step 5: Ship 3 from store
   const order = await harness.createSalesOrder({
     soNumber: `SO-XWF-${randomUUID().slice(0, 8)}`,
     customerId: customer.id,
