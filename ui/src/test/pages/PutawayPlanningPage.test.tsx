@@ -57,6 +57,24 @@ const completedPutaway = {
       fromLocationId: 'stage-1',
       toLocationId: 'bulk-1',
       toLocationCode: 'BULK-1',
+      inventoryMovementId: 'movement-1',
+      putawayBlockedReason: 'Line is locked after posting.',
+      status: 'completed',
+    },
+    {
+      id: 'putaway-line-2',
+      lineNumber: 2,
+      purchaseOrderReceiptLineId: 'receipt-line-2',
+      itemId: 'item-2',
+      itemSku: 'BOX',
+      itemName: 'Retail box',
+      uom: 'each',
+      quantityPlanned: 46,
+      quantityMoved: 46,
+      fromLocationId: 'stage-1',
+      toLocationId: 'pick-1',
+      toLocationCode: 'PICK-1',
+      inventoryMovementId: 'movement-2',
       status: 'completed',
     },
   ],
@@ -177,6 +195,40 @@ describe('PutawayPlanningPage workflow completion', () => {
     expect(screen.getByText(/Accepted inventory has been stored/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Post putaway/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Back to receiving queue' })).toBeInTheDocument()
+  })
+
+  it('renders completed putaway lines as stored without showing blocked status', () => {
+    renderPage()
+
+    expect(screen.getByRole('columnheader', { name: 'Item' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Quantity' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Stored in' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.getAllByText('Stored')).toHaveLength(2)
+    expect(screen.queryByText('Blocked')).not.toBeInTheDocument()
+    expect(screen.getByText('BULK-1')).toBeInTheDocument()
+    expect(screen.getByText('PICK-1')).toBeInTheDocument()
+  })
+
+  it('summarizes completed mixed-UOM putaway without combining quantities into units', () => {
+    renderPage()
+
+    expect(screen.getByText('2 items placed into storage.')).toBeInTheDocument()
+    expect(screen.queryByText(/units placed into storage/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps the completed putaway non-editable message visible', () => {
+    renderPage()
+
+    expect(screen.getByText(/Putaway is complete and can no longer be edited/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Post putaway/i })).not.toBeInTheDocument()
+  })
+
+  it('uses related movements copy for completed movement navigation', () => {
+    renderPage()
+
+    expect(screen.getByRole('button', { name: 'View related movements' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View movement log' })).not.toBeInTheDocument()
   })
 
   it('renders the planning form for QC-accepted inventory that is still awaiting putaway', () => {

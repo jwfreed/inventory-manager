@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, Badge, Button, Card, DataTable, Section } from '@shared/ui'
 import { formatNumber } from '@shared/formatters'
@@ -35,29 +35,24 @@ export default function PutawayPlanningPage() {
         ? 'No accepted inventory is available for putaway. Review QC classification.'
         : 'Putaway prerequisites not met.'
   const receiptIdForAction = receipt?.id ?? ctx.receiptIdForQc
-  const completedMovementIds = useMemo(() => {
+  const completedMovementIds = (() => {
     const movementIds = new Set((putaway?.lines ?? []).map((line) => line.inventoryMovementId).filter(Boolean))
     if (movementIds.size === 0 && putaway?.inventoryMovementId) {
       movementIds.add(putaway.inventoryMovementId)
     }
     return Array.from(movementIds)
-  }, [putaway?.inventoryMovementId, putaway?.lines])
+  })()
 
-  const summary = useMemo(() => {
+  const summary = (() => {
     const lines = putaway?.lines ?? []
-    const totalPlaced = lines.reduce((sum, line) => sum + (line.quantityMoved ?? line.quantityPlanned ?? 0), 0)
-    const itemIds = new Set(lines.map((line) => line.itemId))
-    const itemCount = itemIds.size
-    const firstLine = lines[0]
-    const label = firstLine ? (firstLine.itemSku || firstLine.itemName || 'Item') : 'Item'
-    const uom = firstLine?.uom ?? 'units'
-    if (itemCount <= 1 && firstLine) {
-      return `${formatNumber(totalPlaced)} ${uom} of ${label} has been placed into storage.`
+    const itemCount = lines.length
+    if (itemCount > 0) {
+      return `${itemCount} ${itemCount === 1 ? 'item' : 'items'} placed into storage.`
     }
-    return `${itemCount} items · ${formatNumber(totalPlaced)} units placed into storage.`
-  }, [putaway?.lines])
+    return 'Accepted inventory has been placed into storage.'
+  })()
 
-  const exceptionNotes = useMemo(() => {
+  const exceptionNotes = (() => {
     if (!receipt?.lines?.length) return []
     const notes: string[] = []
     receipt.lines.forEach((line) => {
@@ -77,12 +72,9 @@ export default function PutawayPlanningPage() {
       }
     })
     return notes
-  }, [receipt?.lines])
+  })()
 
-  const isPartialReceipt = useMemo(() => {
-    if (!receipt?.lines?.length) return false
-    return receipt.lines.some((line) => (line.quantityReceived ?? 0) < (line.expectedQuantity ?? 0))
-  }, [receipt?.lines])
+  const isPartialReceipt = receipt?.lines?.some((line) => (line.quantityReceived ?? 0) < (line.expectedQuantity ?? 0)) ?? false
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -233,7 +225,7 @@ export default function PutawayPlanningPage() {
                     },
                     {
                       id: 'location',
-                      header: 'Storage location',
+                      header: 'Stored in',
                       cell: (line) => (
                         <div className="font-mono text-xs text-slate-700">
                           {line.toLocationCode || line.toLocationName || 'Unassigned'}
@@ -243,11 +235,7 @@ export default function PutawayPlanningPage() {
                     {
                       id: 'status',
                       header: 'Status',
-                      cell: (line) => {
-                        if (line.putawayBlockedReason) return 'Blocked'
-                        if (line.qcBreakdown?.hold && line.qcBreakdown.hold > 0) return 'QC Hold'
-                        return 'Available'
-                      },
+                      cell: () => 'Stored',
                     },
                   ]}
                 />
@@ -289,7 +277,7 @@ export default function PutawayPlanningPage() {
                         : navigate('/movements')
                     }
                   >
-                    View movement log
+                    View related movements
                   </Button>
                 </div>
               </div>
