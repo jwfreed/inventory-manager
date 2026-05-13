@@ -49,6 +49,39 @@ export function mapPutawayTransferInvariantError(error: any) {
   return null;
 }
 
+export function buildPutawayPostedEventPayload(putaway: {
+  id: string;
+  inventoryMovementId?: string | null;
+  lines: Array<{
+    itemId: string;
+    fromLocationId: string;
+    toLocationId: string;
+    inventoryMovementId?: string | null;
+  }>;
+}) {
+  const primaryMovementId = putaway.inventoryMovementId ?? null;
+  const movementIds = Array.from(
+    new Set(
+      putaway.lines
+        .map((line) => line.inventoryMovementId)
+        .filter((movementId): movementId is string => Boolean(movementId))
+    )
+  );
+  if (movementIds.length === 0 && primaryMovementId) {
+    movementIds.push(primaryMovementId);
+  }
+  return {
+    putawayId: putaway.id,
+    movementId: primaryMovementId,
+    primaryMovementId,
+    movementIds,
+    itemIds: Array.from(new Set(putaway.lines.map((line) => line.itemId))),
+    locationIds: Array.from(
+      new Set(putaway.lines.flatMap((line) => [line.fromLocationId, line.toLocationId]))
+    )
+  };
+}
+
 router.post('/putaways', async (req: Request, res: Response) => {
   const parsed = putawaySchema.safeParse(req.body);
   if (!parsed.success) {
@@ -154,21 +187,7 @@ router.post('/putaways/:id/post', async (req: Request, res: Response) => {
       throw new Error('Failed to retrieve putaway after posting');
     }
 
-    const itemIds = Array.from(new Set(putaway.lines.map((line: { itemId: string }) => line.itemId)));
-    const locationIds = Array.from(
-      new Set(
-        putaway.lines.flatMap((line: { fromLocationId: string; toLocationId: string }) => [
-          line.fromLocationId,
-          line.toLocationId
-        ])
-      )
-    );
-    emitEvent(tenantId, 'inventory.putaway.posted', {
-      putawayId: putaway.id,
-      movementId: putaway.inventoryMovementId,
-      itemIds,
-      locationIds
-    });
+    emitEvent(tenantId, 'inventory.putaway.posted', buildPutawayPostedEventPayload(putaway));
     return res.json(putaway);
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {

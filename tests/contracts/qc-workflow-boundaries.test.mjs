@@ -13,7 +13,10 @@ const { createQcEvent } = require('../../src/services/qc.service.ts');
 const { closePurchaseOrderReceipt } = require('../../src/services/closeout.service.ts');
 const { fetchReceiptById } = require('../../src/services/receipts.service.ts');
 const { createPutaway, postPutaway } = require('../../src/services/putaways.service.ts');
-const { mapPutawayTransferInvariantError } = require('../../src/routes/putaways.routes.ts');
+const {
+  buildPutawayPostedEventPayload,
+  mapPutawayTransferInvariantError
+} = require('../../src/routes/putaways.routes.ts');
 const { relocateTransferCostLayersInTx } = require('../../src/services/transferCosting.service.ts');
 const {
   rebuildReceiptAllocations,
@@ -988,6 +991,40 @@ test('putaway route maps transfer balance invariant failures to actionable confl
   assert.equal(unbalanced?.status, 409);
   assert.equal(unbalanced?.body?.error?.code, 'TRANSFER_NOT_BALANCED');
   assert.match(unbalanced?.body?.error?.message, /quantities are not balanced/);
+});
+
+test('putaway posted event payload keeps primary movement id and includes all line movements', () => {
+  const payload = buildPutawayPostedEventPayload({
+    id: 'putaway-1',
+    inventoryMovementId: 'movement-primary',
+    lines: [
+      {
+        itemId: 'item-a',
+        fromLocationId: 'qa',
+        toLocationId: 'store',
+        inventoryMovementId: 'movement-primary'
+      },
+      {
+        itemId: 'item-b',
+        fromLocationId: 'qa',
+        toLocationId: 'store',
+        inventoryMovementId: 'movement-secondary'
+      },
+      {
+        itemId: 'item-b',
+        fromLocationId: 'qa',
+        toLocationId: 'store',
+        inventoryMovementId: 'movement-secondary'
+      }
+    ]
+  });
+
+  assert.equal(payload.putawayId, 'putaway-1');
+  assert.equal(payload.movementId, 'movement-primary');
+  assert.equal(payload.primaryMovementId, 'movement-primary');
+  assert.deepEqual(payload.movementIds.sort(), ['movement-primary', 'movement-secondary']);
+  assert.deepEqual(payload.itemIds.sort(), ['item-a', 'item-b']);
+  assert.deepEqual(payload.locationIds.sort(), ['qa', 'store']);
 });
 
 test('unresolved hold prevents QC completion — full hold', { timeout: 240000 }, async () => {
