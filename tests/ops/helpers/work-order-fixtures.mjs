@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 const execFileAsync = promisify(execFile);
 const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const QC_RETRY_DELAYS_MS = [50, 100, 200];
+const receiptLineContexts = new Map();
 
 export const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 export const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
@@ -109,7 +110,33 @@ export async function createReceipt({
     }
   });
   assert.equal(receiptRes.res.status, 201, JSON.stringify(receiptRes.payload));
-  return receiptRes.payload.lines[0].id;
+  const receiptLineId = receiptRes.payload.lines[0].id;
+  receiptLineContexts.set(receiptLineId, {
+    receiptId: receiptRes.payload.id,
+    locationId
+  });
+  return receiptLineId;
+}
+
+export async function putawayReceiptLine(token, receiptLineId, quantity) {
+  const context = receiptLineContexts.get(receiptLineId);
+  assert.ok(context, `missing receipt context for ${receiptLineId}`);
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `wo-fixture-putaway:${receiptLineId}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: context.receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId: context.locationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `wo-fixture-putaway-post:${receiptLineId}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
 }
 
 export async function qcAcceptReceiptLine(token, receiptLineId, quantity) {
@@ -127,6 +154,7 @@ export async function qcAcceptReceiptLine(token, receiptLineId, quantity) {
       }
     });
     if (res.res.status === 201 || res.res.status === 200) {
+      await putawayReceiptLine(token, receiptLineId, quantity);
       return;
     }
     if (!isRetryableQcTxExhausted(res) || attempt === QC_RETRY_DELAYS_MS.length) {

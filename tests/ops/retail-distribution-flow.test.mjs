@@ -9,6 +9,7 @@ const baseUrl = (process.env.API_BASE_URL || 'http://127.0.0.1:3000').replace(/\
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
 const tenantSlug = `retail-dist-${randomUUID().slice(0, 8)}`;
+const receiptLineContexts = new Map();
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
   const url = new URL(baseUrl + path);
@@ -164,7 +165,11 @@ async function createReceipt({ token, vendorId, itemId, locationId, quantity, un
     }
   });
   assert.equal(receiptRes.res.status, 201, JSON.stringify(receiptRes.payload));
-  return receiptRes.payload.lines[0].id;
+  const receiptLineId = receiptRes.payload.lines[0].id;
+  receiptLineContexts.set(receiptLineId, {
+    receiptId: receiptRes.payload.id
+  });
+  return receiptLineId;
 }
 
 async function qcAccept(token, body) {
@@ -175,6 +180,27 @@ async function qcAccept(token, body) {
   });
   assert.equal(res.res.status, 201, JSON.stringify(res.payload));
   return res.payload;
+}
+
+async function putawayReceiptLine(token, receiptLineId, toLocationId, quantity) {
+  const context = receiptLineContexts.get(receiptLineId);
+  assert.ok(context, `missing receipt context for ${receiptLineId}`);
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `retail-putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: context.receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assert.equal(putawayRes.res.status, 201, JSON.stringify(putawayRes.payload));
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `retail-putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assert.equal(postRes.res.status, 200, JSON.stringify(postRes.payload));
 }
 
 async function getAtpAvailable(token, warehouseId, itemId) {
@@ -216,6 +242,7 @@ test('retail distribution flow: WO->QA, QC accept, transfer to store, reserve+fu
     actorType: 'user',
     actorId
   });
+  await putawayReceiptLine(token, receiptLineId, factory.defaults.SELLABLE.id, 10);
 
   const bomId = await createBom(token, fgItemId, componentItemId, 1);
 

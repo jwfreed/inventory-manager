@@ -9,6 +9,7 @@ const baseUrl = (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\
 const adminEmail = process.env.SEED_ADMIN_EMAIL || 'jon.freed@gmail.com';
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin@local';
 let db;
+const receiptLineContexts = new Map();
 
 
 async function apiRequest(method, path, { token, body, params, headers } = {}) {
@@ -92,6 +93,15 @@ async function setWarehouseDefault({ tenantId, warehouseId, role, locationId }) 
   }
 }
 
+async function getWarehouseDefaultLocationId({ tenantId, warehouseId, role }) {
+  const res = await db.query(
+    `SELECT location_id FROM warehouse_default_location WHERE tenant_id = $1 AND warehouse_id = $2 AND role = $3`,
+    [tenantId, warehouseId, role]
+  );
+  assert.equal(res.rowCount, 1);
+  return res.rows[0].location_id;
+}
+
 async function createWarehouseGraph(token) {
   const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: import.meta.url });
   const qaLocation = defaults.QA;
@@ -165,7 +175,11 @@ async function receiveIntoQa(token, vendorId, itemId, qaLocationId, quantity) {
     },
   });
   assertOk(receiptRes.res, 'POST /purchase-order-receipts', receiptRes.payload, { poId }, [201]);
-  return receiptRes.payload.lines[0].id;
+  const receiptLineId = receiptRes.payload.lines[0].id;
+  receiptLineContexts.set(receiptLineId, {
+    receiptId: receiptRes.payload.id
+  });
+  return receiptLineId;
 }
 
 async function qcAccept(token, receiptLineId, quantity, actorId) {
@@ -183,6 +197,27 @@ async function qcAccept(token, receiptLineId, quantity, actorId) {
   assertOk(res.res, 'POST /qc-events (accept)', res.payload, { receiptLineId, quantity }, [201]);
 }
 
+async function putawayReceiptLine(token, receiptLineId, toLocationId, quantity) {
+  const context = receiptLineContexts.get(receiptLineId);
+  assert.ok(context, `missing receipt context for ${receiptLineId}`);
+  const putawayRes = await apiRequest('POST', '/putaways', {
+    token,
+    headers: { 'Idempotency-Key': `putaway-${randomUUID()}` },
+    body: {
+      sourceType: 'purchase_order_receipt',
+      purchaseOrderReceiptId: context.receiptId,
+      lines: [{ purchaseOrderReceiptLineId: receiptLineId, toLocationId, uom: 'each', quantity }]
+    }
+  });
+  assertOk(putawayRes.res, 'POST /putaways', putawayRes.payload, { receiptLineId, toLocationId }, [201]);
+  const postRes = await apiRequest('POST', `/putaways/${putawayRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `putaway-post-${randomUUID()}` },
+    body: {}
+  });
+  assertOk(postRes.res, 'POST /putaways/:id/post', postRes.payload, { receiptLineId, toLocationId }, [200]);
+}
+
 async function getSnapshot(token, itemId, locationId, warehouseId) {
   const res = await apiRequest('GET', '/inventory-snapshot', {
     token,
@@ -195,7 +230,6 @@ async function getSnapshot(token, itemId, locationId, warehouseId) {
 
 test('default sellable location changes take effect immediately', async () => {
   const tenantSlug = `default-drift-${randomUUID().slice(0, 8)}`;
-let db;
   const session = await getSession(tenantSlug);
   const token = session.accessToken;
   const tenantId = session.tenant?.id;
@@ -229,6 +263,12 @@ let db;
 
   const receiptLineA = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 5);
   await qcAccept(token, receiptLineA, 5, actorId);
+  await putawayReceiptLine(
+    token,
+    receiptLineA,
+    await getWarehouseDefaultLocationId({ tenantId, warehouseId: warehouse.id, role: 'SELLABLE' }),
+    5
+  );
 
   const onHandA1 = await getSnapshot(token, itemId, sellableA.id, warehouse.id);
   const onHandB1 = await getSnapshot(token, itemId, sellableB.id, warehouse.id);
@@ -259,6 +299,12 @@ let db;
 
   const receiptLineB = await receiveIntoQa(token, vendorId, itemId, qaLocation.id, 7);
   await qcAccept(token, receiptLineB, 7, actorId);
+  await putawayReceiptLine(
+    token,
+    receiptLineB,
+    await getWarehouseDefaultLocationId({ tenantId, warehouseId: warehouse.id, role: 'SELLABLE' }),
+    7
+  );
 
   const onHandA2 = await getSnapshot(token, itemId, sellableA.id, warehouse.id);
   const onHandB2 = await getSnapshot(token, itemId, sellableB.id, warehouse.id);

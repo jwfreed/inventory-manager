@@ -326,7 +326,7 @@ test('PO receipt posts ledger into QA and QC reclassifies without new cost layer
     `QA+FG conservation violated: afterReceipt=${totalAfterReceipt} afterQc=${totalAfterQc} qaBefore=${qaOnHandBefore} qaAfterReceipt=${qaOnHand} fgBefore=${fgOnHandBefore} fgAfterQc=${fgOnHandAfterQc}`
   );
   assert.ok(Math.abs(Number(qaOnHandAfterQc) - Number(qaOnHand)) < 1e-6, 'QA remains unchanged after QC accept');
-  assert.ok(Math.abs(Number(fgOnHandAfterQc) - Number(fgOnHandBefore)) < 1e-6, 'Sellable remains unchanged before putaway');
+  assert.ok(Math.abs(Number(fgOnHandAfterQc) - Number(fgOnHand)) < 1e-6, 'Sellable remains unchanged before putaway');
 
   const costRes3 = await db.query(
     `SELECT COUNT(*) AS count
