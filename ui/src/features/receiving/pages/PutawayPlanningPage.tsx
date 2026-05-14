@@ -47,7 +47,7 @@ export default function PutawayPlanningPage() {
     const lines = putaway?.lines ?? []
     const itemCount = lines.length
     if (itemCount > 0) {
-      return `${itemCount} ${itemCount === 1 ? 'item' : 'items'} placed into storage.`
+      return `${itemCount} putaway ${itemCount === 1 ? 'line' : 'lines'} placed into storage.`
     }
     return 'Accepted inventory has been placed into storage.'
   })()

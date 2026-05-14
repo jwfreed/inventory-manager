@@ -149,6 +149,12 @@ const buildContextValue = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+function mockReceivingContext(overrides: Record<string, unknown> = {}) {
+  mockedUseReceivingContext.mockReturnValue(
+    buildContextValue(overrides) as unknown as ReturnType<typeof useReceivingContext>,
+  )
+}
+
 function renderPage() {
   return renderWithQueryClient(
     <MemoryRouter initialEntries={['/receiving/putaway?receiptId=receipt-1&putawayId=putaway-1']}>
@@ -185,7 +191,7 @@ function renderPageWithRoutes(initialEntry = '/receiving/putaway?receiptId=recei
 describe('PutawayPlanningPage workflow completion', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedUseReceivingContext.mockReturnValue(buildContextValue() as any)
+    mockReceivingContext()
   })
 
   it('shows inbound workflow completion after putaway is complete', () => {
@@ -210,10 +216,28 @@ describe('PutawayPlanningPage workflow completion', () => {
     expect(screen.getByText('PICK-1')).toBeInTheDocument()
   })
 
-  it('summarizes completed mixed-UOM putaway without combining quantities into units', () => {
+  it('summarizes a single completed putaway line with singular line copy', () => {
+    mockReceivingContext({
+      putawayQuery: {
+        data: {
+          ...completedPutaway,
+          lines: [completedPutaway.lines[0]],
+        },
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+    })
+
     renderPage()
 
-    expect(screen.getByText('2 items placed into storage.')).toBeInTheDocument()
+    expect(screen.getByText('1 putaway line placed into storage.')).toBeInTheDocument()
+  })
+
+  it('summarizes completed mixed-UOM putaway with plural line copy without combining quantities into units', () => {
+    renderPage()
+
+    expect(screen.getByText('2 putaway lines placed into storage.')).toBeInTheDocument()
     expect(screen.queryByText(/units placed into storage/i)).not.toBeInTheDocument()
   })
 
@@ -232,56 +256,54 @@ describe('PutawayPlanningPage workflow completion', () => {
   })
 
   it('renders the planning form for QC-accepted inventory that is still awaiting putaway', () => {
-    mockedUseReceivingContext.mockReturnValue(
-      buildContextValue({
-        putawayQuery: {
-          data: null,
-          isLoading: false,
-          isError: false,
-          error: null,
+    mockReceivingContext({
+      putawayQuery: {
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+      putawayId: '',
+      putawayReady: true,
+      putawayHasAvailable: true,
+      receiptLineOptions: [
+        {
+          value: 'receipt-line-1',
+          label: 'COCOA · 30,000 g',
+          availableQuantity: 30000,
+          uom: 'g',
         },
-        putawayId: '',
-        putawayReady: true,
-        putawayHasAvailable: true,
-        receiptLineOptions: [
-          {
-            value: 'receipt-line-1',
-            label: 'COCOA · 30,000 g',
-            availableQuantity: 30000,
-            uom: 'g',
-          },
-        ],
-        receiptQuery: {
-          data: {
-            id: 'receipt-1',
-            receiptNumber: 'R-1001',
-            purchaseOrderId: 'po-1',
-            status: 'posted',
-            receivedAt: '2026-05-11T00:00:00Z',
-            lines: [
-              {
-                id: 'receipt-line-1',
-                purchaseOrderReceiptId: 'receipt-1',
-                purchaseOrderLineId: 'po-line-1',
-                itemSku: 'COCOA',
-                itemName: 'Cocoa powder',
-                quantityReceived: 30000,
-                expectedQuantity: 30000,
-                uom: 'g',
-                qcSummary: {
-                  remainingUninspectedQuantity: 0,
-                  breakdown: { accept: 30000, hold: 0, reject: 0 },
-                },
-                putawayAcceptedQuantity: 30000,
-                availableForNewPutaway: 30000,
-                remainingQuantityToPutaway: 30000,
-                putawayBlockedReason: null,
+      ],
+      receiptQuery: {
+        data: {
+          id: 'receipt-1',
+          receiptNumber: 'R-1001',
+          purchaseOrderId: 'po-1',
+          status: 'posted',
+          receivedAt: '2026-05-11T00:00:00Z',
+          lines: [
+            {
+              id: 'receipt-line-1',
+              purchaseOrderReceiptId: 'receipt-1',
+              purchaseOrderLineId: 'po-line-1',
+              itemSku: 'COCOA',
+              itemName: 'Cocoa powder',
+              quantityReceived: 30000,
+              expectedQuantity: 30000,
+              uom: 'g',
+              qcSummary: {
+                remainingUninspectedQuantity: 0,
+                breakdown: { accept: 30000, hold: 0, reject: 0 },
               },
-            ],
-          },
+              putawayAcceptedQuantity: 30000,
+              availableForNewPutaway: 30000,
+              remainingQuantityToPutaway: 30000,
+              putawayBlockedReason: null,
+            },
+          ],
         },
-      }) as any,
-    )
+      },
+    })
 
     renderPageWithRoutes()
 
@@ -290,45 +312,43 @@ describe('PutawayPlanningPage workflow completion', () => {
   })
 
   it('explains that QC acceptance is required before putaway is available', () => {
-    mockedUseReceivingContext.mockReturnValue(
-      buildContextValue({
-        putawayQuery: {
-          data: null,
-          isLoading: false,
-          isError: false,
-          error: null,
-        },
-        putawayId: '',
-        putawayReady: false,
-        putawayHasAvailable: false,
-        receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
-        receiptQuery: {
-          data: {
-            id: 'receipt-1',
-            receiptNumber: 'R-1001',
-            purchaseOrderId: 'po-1',
-            status: 'posted',
-            receivedAt: '2026-05-11T00:00:00Z',
-            lines: [
-              {
-                id: 'receipt-line-1',
-                purchaseOrderReceiptId: 'receipt-1',
-                purchaseOrderLineId: 'po-line-1',
-                itemSku: 'COCOA',
-                itemName: 'Cocoa powder',
-                quantityReceived: 30000,
-                expectedQuantity: 30000,
-                uom: 'g',
-                qcSummary: {
-                  remainingUninspectedQuantity: 30000,
-                  breakdown: { accept: 0, hold: 0, reject: 0 },
-                },
+    mockReceivingContext({
+      putawayQuery: {
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+      putawayId: '',
+      putawayReady: false,
+      putawayHasAvailable: false,
+      receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
+      receiptQuery: {
+        data: {
+          id: 'receipt-1',
+          receiptNumber: 'R-1001',
+          purchaseOrderId: 'po-1',
+          status: 'posted',
+          receivedAt: '2026-05-11T00:00:00Z',
+          lines: [
+            {
+              id: 'receipt-line-1',
+              purchaseOrderReceiptId: 'receipt-1',
+              purchaseOrderLineId: 'po-line-1',
+              itemSku: 'COCOA',
+              itemName: 'Cocoa powder',
+              quantityReceived: 30000,
+              expectedQuantity: 30000,
+              uom: 'g',
+              qcSummary: {
+                remainingUninspectedQuantity: 30000,
+                breakdown: { accept: 0, hold: 0, reject: 0 },
               },
-            ],
-          },
+            },
+          ],
         },
-      }) as any,
-    )
+      },
+    })
 
     renderPage()
 
@@ -338,49 +358,47 @@ describe('PutawayPlanningPage workflow completion', () => {
   })
 
   it('keeps hold-only receipt lines blocked from putaway planning', () => {
-    mockedUseReceivingContext.mockReturnValue(
-      buildContextValue({
-        putawayQuery: {
-          data: null,
-          isLoading: false,
-          isError: false,
-          error: null,
-        },
-        putawayId: '',
-        putawayReady: false,
-        putawayHasAvailable: false,
-        receiptTotals: { received: 30000, accepted: 0, hold: 30000, reject: 0, remaining: 0 },
-        receiptQuery: {
-          data: {
-            id: 'receipt-1',
-            receiptNumber: 'R-1001',
-            purchaseOrderId: 'po-1',
-            status: 'posted',
-            receivedAt: '2026-05-11T00:00:00Z',
-            lines: [
-              {
-                id: 'receipt-line-1',
-                purchaseOrderReceiptId: 'receipt-1',
-                purchaseOrderLineId: 'po-line-1',
-                itemSku: 'COCOA',
-                itemName: 'Cocoa powder',
-                quantityReceived: 30000,
-                expectedQuantity: 30000,
-                uom: 'g',
-                qcSummary: {
-                  remainingUninspectedQuantity: 0,
-                  breakdown: { accept: 0, hold: 30000, reject: 0 },
-                },
-                putawayAcceptedQuantity: 0,
-                availableForNewPutaway: 0,
-                remainingQuantityToPutaway: 0,
-                putawayBlockedReason: 'Receipt line is on QC hold with no accepted quantity.',
+    mockReceivingContext({
+      putawayQuery: {
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+      putawayId: '',
+      putawayReady: false,
+      putawayHasAvailable: false,
+      receiptTotals: { received: 30000, accepted: 0, hold: 30000, reject: 0, remaining: 0 },
+      receiptQuery: {
+        data: {
+          id: 'receipt-1',
+          receiptNumber: 'R-1001',
+          purchaseOrderId: 'po-1',
+          status: 'posted',
+          receivedAt: '2026-05-11T00:00:00Z',
+          lines: [
+            {
+              id: 'receipt-line-1',
+              purchaseOrderReceiptId: 'receipt-1',
+              purchaseOrderLineId: 'po-line-1',
+              itemSku: 'COCOA',
+              itemName: 'Cocoa powder',
+              quantityReceived: 30000,
+              expectedQuantity: 30000,
+              uom: 'g',
+              qcSummary: {
+                remainingUninspectedQuantity: 0,
+                breakdown: { accept: 0, hold: 30000, reject: 0 },
               },
-            ],
-          },
+              putawayAcceptedQuantity: 0,
+              availableForNewPutaway: 0,
+              remainingQuantityToPutaway: 0,
+              putawayBlockedReason: 'Receipt line is on QC hold with no accepted quantity.',
+            },
+          ],
         },
-      }) as any,
-    )
+      },
+    })
 
     renderPageWithRoutes()
 
@@ -389,20 +407,18 @@ describe('PutawayPlanningPage workflow completion', () => {
   })
 
   it('routes a QC-blocked putaway back to the receipt QC page', () => {
-    mockedUseReceivingContext.mockReturnValue(
-      buildContextValue({
-        putawayQuery: {
-          data: null,
-          isLoading: false,
-          isError: false,
-          error: null,
-        },
-        putawayId: '',
-        putawayReady: false,
-        putawayHasAvailable: false,
-        receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
-      }) as any,
-    )
+    mockReceivingContext({
+      putawayQuery: {
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+      putawayId: '',
+      putawayReady: false,
+      putawayHasAvailable: false,
+      receiptTotals: { received: 30000, accepted: 0, hold: 0, reject: 0, remaining: 30000 },
+    })
 
     renderPageWithRoutes()
 
@@ -411,21 +427,19 @@ describe('PutawayPlanningPage workflow completion', () => {
   })
 
   it('routes putaway with no receipt context back to inbound work', () => {
-    mockedUseReceivingContext.mockReturnValue(
-      buildContextValue({
-        putawayQuery: {
-          data: null,
-          isLoading: false,
-          isError: false,
-          error: null,
-        },
-        putawayId: '',
-        putawayReady: false,
-        putawayHasAvailable: false,
-        receiptQuery: { data: null },
-        receiptTotals: { received: 0, accepted: 0, hold: 0, reject: 0, remaining: 0 },
-      }) as any,
-    )
+    mockReceivingContext({
+      putawayQuery: {
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      },
+      putawayId: '',
+      putawayReady: false,
+      putawayHasAvailable: false,
+      receiptQuery: { data: null },
+      receiptTotals: { received: 0, accepted: 0, hold: 0, reject: 0, remaining: 0 },
+    })
 
     renderPageWithRoutes('/receiving/putaway')
 
