@@ -12,9 +12,8 @@ import { ItemHealthBanner } from '../components/ItemHealthBanner'
 import { ItemHistorySection } from '../components/ItemHistorySection'
 import { ItemInventorySection } from '../components/ItemInventorySection'
 import { ItemProductionSection } from '../components/ItemProductionSection'
+import { ItemReadinessPanel } from '../components/ItemReadinessPanel'
 import { ItemSectionNav } from '../components/ItemSectionNav'
-import { MetricGrid } from '../components/MetricGrid'
-import { MetricTile } from '../components/MetricTile'
 import { useItemDetailPageModel, itemDetailSectionLinks } from '../hooks/useItemDetailPageModel'
 import { useAuth } from '@shared/auth'
 
@@ -33,6 +32,7 @@ export default function ItemDetailPage() {
   const editFormRef = useRef<HTMLDivElement | null>(null)
   const copyTimeoutRef = useRef<number | null>(null)
   const selectedLocationId = searchParams.get('locationId') ?? ''
+  const activeTab = searchParams.get('tab') ?? 'overview'
   const model = useItemDetailPageModel({ id, selectedLocationId })
 
   useEffect(() => {
@@ -69,6 +69,17 @@ export default function ItemDetailPage() {
     setSearchParams(nextParams)
   }
 
+  const handleTabChange = (tabId: string) => {
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tab', tabId)
+    setSearchParams(nextParams)
+  }
+
+  const handleCreateRouting = () => {
+    handleTabChange('production')
+  }
+
+
   if (model.itemQuery.isLoading) return <LoadingSpinner label="Loading item..." />
   if (model.itemQuery.isError && model.itemQuery.error) {
     return <ErrorState error={model.itemQuery.error} onRetry={() => void model.itemQuery.refetch()} />
@@ -91,28 +102,13 @@ export default function ItemDetailPage() {
             />
           </section>
         }
-        health={
-          <ItemHealthBanner
-            health={model.health}
-            diagnostics={model.diagnostics}
-            onAction={(actionId) => {
-              if (actionId === 'fix_conversions') document.getElementById('configuration')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              if (actionId === 'adjust_stock' && id) navigate(`/inventory-adjustments/new?itemId=${id}`)
-              if (actionId === 'create_bom') { setShowBomForm(true); document.getElementById('production')?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
-              if (actionId === 'create_routing') document.getElementById('production')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              if (actionId === 'view_movements') navigate(model.movementLink)
-              if (actionId === 'edit_item') setShowEdit(true)
-            }}
+        sectionNav={
+          <ItemSectionNav
+            sections={itemDetailSectionLinks}
+            activeSection={activeTab}
+            onSectionChange={handleTabChange}
           />
         }
-        metrics={
-          <MetricGrid>
-            {model.metricTiles.map((tile) => (
-              <MetricTile key={tile.label} label={tile.label} value={tile.value} subtext={tile.subtext} status={tile.status} />
-            ))}
-          </MetricGrid>
-        }
-        sectionNav={<ItemSectionNav sections={itemDetailSectionLinks} />}
         contextRail={
           <ItemContextRail
             item={model.item}
@@ -125,48 +121,90 @@ export default function ItemDetailPage() {
           />
         }
       >
-        <ItemInventorySection
-          lifecycleStages={model.lifecycleStages}
-          canonicalUom={model.conversionState.canonicalUom}
-          selectedLocationId={selectedLocationId}
-          selectedLocationLabel={model.selectedLocationLabel}
-          locations={model.locationsQuery.data?.data ?? []}
-          locationLookup={model.locationLookup}
-          stockRows={model.stockRows}
-          factorByUom={model.conversionState.factorByUom}
-          missingConversionUnits={model.healthConfiguration.missingConversionUnits}
-          hasNegativeOnHand={model.inventorySummary.hasNegativeOnHand}
-          isLoading={model.inventoryQuery.isLoading}
-          error={model.inventoryQuery.error}
-          onRetry={() => void model.inventoryQuery.refetch()}
-          onLocationChange={updateLocationScope}
-          onViewMovements={() => navigate(model.movementLink)}
-          onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
-        />
-        <ItemProductionSection
-          item={model.item}
-          itemId={model.item.id}
-          summary={model.bomSummary}
-          boms={model.bomsQuery.data?.boms ?? []}
-          isLoading={model.bomsQuery.isLoading}
-          error={model.bomsQuery.error ?? null}
-          showComposer={showBomForm}
-          message={bomMessage}
-          onToggleComposer={() => { setShowBomForm((value) => !value); if (!showBomForm) setBomMessage(null) }}
-          onCreateWorkOrder={() => model.bomSummary.activeBom && id && navigate(`/work-orders/new?outputItemId=${id}&bomId=${model.bomSummary.activeBom.id}`)}
-          onCreated={() => { setShowBomForm(false); setBomMessage('BOM created.'); void model.bomsQuery.refetch() }}
-          onRefetch={() => void model.bomsQuery.refetch()}
-          onDuplicate={(payload) => { setBomDraftSource(payload); setShowBomModal(true) }}
-        />
-        <ItemConfigurationSection
-          item={model.item}
-          conversionState={model.conversionState}
-          manualConversions={model.uomConversionsQuery.data ?? []}
-          showEdit={showEdit}
-          editFormRef={editFormRef}
-          onSaved={() => { setShowEdit(false); void model.itemQuery.refetch() }}
-        />
-        <ItemHistorySection item={model.item} baseCurrency={baseCurrency} onViewLedger={() => navigate(model.movementLink)} />
+        {activeTab === 'overview' && (
+          <section id="overview-detail" className="space-y-4">
+            <ItemReadinessPanel
+              available={model.inventorySummary.available}
+              onHand={model.inventorySummary.onHand}
+              reserved={model.inventorySummary.reserved}
+              inTransit={model.inventorySummary.inTransit}
+              backordered={model.inventorySummary.backordered}
+              canonicalUom={model.conversionState.canonicalUom}
+              hasNegativeOnHand={model.inventorySummary.hasNegativeOnHand}
+              hasManufacturingFlow={model.hasManufacturingFlow}
+              hasActiveBom={model.healthConfiguration.hasActiveBom}
+              hasRouting={model.healthConfiguration.hasRouting}
+              onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+              onViewMovements={() => navigate(model.movementLink)}
+              onCreateRouting={handleCreateRouting}
+            />
+            {(model.diagnostics.length > 0 || model.health.reasons.length > 0) && (
+              <ItemHealthBanner
+                health={model.health}
+                diagnostics={model.diagnostics}
+                onAction={(actionId) => {
+                  if (actionId === 'fix_conversions') handleTabChange('configuration')
+                  if (actionId === 'adjust_stock' && id) navigate(`/inventory-adjustments/new?itemId=${id}`)
+                  if (actionId === 'create_bom') { setShowBomForm(true); handleTabChange('production') }
+                  if (actionId === 'create_routing') handleCreateRouting()
+                  if (actionId === 'view_movements') navigate(model.movementLink)
+                  if (actionId === 'edit_item') setShowEdit(true)
+                }}
+              />
+            )}
+          </section>
+        )}
+        {activeTab === 'inventory' && (
+          <ItemInventorySection
+            lifecycleStages={model.lifecycleStages}
+            canonicalUom={model.conversionState.canonicalUom}
+            selectedLocationId={selectedLocationId}
+            selectedLocationLabel={model.selectedLocationLabel}
+            locations={model.locationsQuery.data?.data ?? []}
+            locationLookup={model.locationLookup}
+            stockRows={model.stockRows}
+            factorByUom={model.conversionState.factorByUom}
+            missingConversionUnits={model.healthConfiguration.missingConversionUnits}
+            hasNegativeOnHand={model.inventorySummary.hasNegativeOnHand}
+            isLoading={model.inventoryQuery.isLoading}
+            error={model.inventoryQuery.error}
+            onRetry={() => void model.inventoryQuery.refetch()}
+            onLocationChange={updateLocationScope}
+            onViewMovements={() => navigate(model.movementLink)}
+            onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+          />
+        )}
+        {activeTab === 'production' && (
+          <ItemProductionSection
+            item={model.item}
+            itemId={model.item.id}
+            summary={model.bomSummary}
+            boms={model.bomsQuery.data?.boms ?? []}
+            isLoading={model.bomsQuery.isLoading}
+            error={model.bomsQuery.error ?? null}
+            showComposer={showBomForm}
+            message={bomMessage}
+            hasRouting={model.healthConfiguration.hasRouting}
+            onToggleComposer={() => { setShowBomForm((value) => !value); if (!showBomForm) setBomMessage(null) }}
+            onCreateWorkOrder={() => model.bomSummary.activeBom && id && navigate(`/work-orders/new?outputItemId=${id}&bomId=${model.bomSummary.activeBom.id}`)}
+            onCreated={() => { setShowBomForm(false); setBomMessage('BOM created.'); void model.bomsQuery.refetch() }}
+            onRefetch={() => void model.bomsQuery.refetch()}
+            onDuplicate={(payload) => { setBomDraftSource(payload); setShowBomModal(true) }}
+          />
+        )}
+        {activeTab === 'configuration' && (
+          <ItemConfigurationSection
+            item={model.item}
+            conversionState={model.conversionState}
+            manualConversions={model.uomConversionsQuery.data ?? []}
+            showEdit={showEdit}
+            editFormRef={editFormRef}
+            onSaved={() => { setShowEdit(false); void model.itemQuery.refetch() }}
+          />
+        )}
+        {activeTab === 'history' && (
+          <ItemHistorySection item={model.item} baseCurrency={baseCurrency} onViewLedger={() => navigate(model.movementLink)} />
+        )}
       </EntityPageLayout>
       <Modal
         isOpen={showBomModal}

@@ -13,6 +13,7 @@ type Props = {
   error?: ApiError | null
   showComposer: boolean
   message?: string | null
+  hasRouting: boolean
   onToggleComposer: () => void
   onCreateWorkOrder: () => void
   onCreated: () => void
@@ -38,6 +39,7 @@ export function ItemProductionSection(props: Props) {
           error={props.error}
           showComposer={props.showComposer}
           message={props.message}
+          hasRouting={props.hasRouting}
           onToggleComposer={props.onToggleComposer}
           onCreateWorkOrder={props.onCreateWorkOrder}
           onCreated={props.onCreated}

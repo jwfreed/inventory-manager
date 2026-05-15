@@ -63,15 +63,26 @@ export function ItemHeader({
               <Button variant="secondary" size="sm" onClick={onAdjustStock}>
                 Adjust stock
               </Button>
-              {onCreateReplenishmentPolicy ? (
-                <Button variant="secondary" size="sm" onClick={onCreateReplenishmentPolicy}>
-                  Create replenishment policy
-                </Button>
-              ) : null}
-              <Button variant="secondary" size="sm" onClick={onCopyId}>
-                <ClipboardDocumentIcon className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                {idCopied ? 'Copied' : 'Copy ID'}
-              </Button>
+              <div className="flex items-center gap-1.5 pl-1">
+                {onCreateReplenishmentPolicy ? (
+                  <button
+                    type="button"
+                    onClick={onCreateReplenishmentPolicy}
+                    className="text-xs text-slate-400 transition hover:text-slate-600"
+                  >
+                    Replenishment policy
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={onCopyId}
+                  className="flex items-center gap-1 text-xs text-slate-400 transition hover:text-slate-600"
+                  title="Copy item ID"
+                >
+                  <ClipboardDocumentIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  {idCopied ? 'Copied' : 'Copy ID'}
+                </button>
+              </div>
             </div>
           }
         />

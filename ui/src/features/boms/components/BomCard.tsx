@@ -144,17 +144,15 @@ export function BomCard({ bomId, fallback, onChanged, onDuplicate }: Props) {
                           to={`/items/${c.componentItemId}`}
                           className="text-brand-700 hover:underline"
                         >
-                          {c.componentItemSku || c.componentItemName ? (
+                          {c.componentItemName ? (
                             <div>
-                              <div className="font-medium">
-                                {c.componentItemSku || c.componentItemName}
-                              </div>
-                              {c.componentItemSku && c.componentItemName && (
-                                <div className="text-xs text-slate-600">{c.componentItemName}</div>
+                              <div className="font-medium">{c.componentItemName}</div>
+                              {c.componentItemSku && (
+                                <div className="font-mono text-xs text-slate-500">{c.componentItemSku}</div>
                               )}
                             </div>
                           ) : (
-                            c.componentItemId
+                            c.componentItemSku || c.componentItemId
                           )}
                         </Link>
                       </td>

@@ -22,6 +22,7 @@ type Props = {
   error?: ApiError | null
   showComposer: boolean
   message?: string | null
+  hasRouting: boolean
   onToggleComposer: () => void
   onCreateWorkOrder: () => void
   onCreated: () => void
@@ -37,6 +38,7 @@ export function BOMPanel({
   error,
   showComposer,
   message,
+  hasRouting,
   onToggleComposer,
   onCreateWorkOrder,
   onCreated,
@@ -61,6 +63,11 @@ export function BOMPanel({
       }
     >
       <div className="space-y-4">
+        {summary.activeBom && !hasRouting ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-sm text-amber-800">
+            No routing is configured. A work order can be created; routing may be added later.
+          </div>
+        ) : null}
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Active BOM</div>
