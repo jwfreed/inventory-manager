@@ -15,6 +15,7 @@ import { ItemProductionSection } from '../components/ItemProductionSection'
 import { ItemReadinessPanel } from '../components/ItemReadinessPanel'
 import { ItemSectionNav } from '../components/ItemSectionNav'
 import { useItemDetailPageModel, itemDetailSectionLinks } from '../hooks/useItemDetailPageModel'
+import { ItemHealthStatus } from '../itemDetail.models'
 import { useAuth } from '@shared/auth'
 
 export default function ItemDetailPage() {
@@ -32,7 +33,9 @@ export default function ItemDetailPage() {
   const editFormRef = useRef<HTMLDivElement | null>(null)
   const copyTimeoutRef = useRef<number | null>(null)
   const selectedLocationId = searchParams.get('locationId') ?? ''
-  const activeTab = searchParams.get('tab') ?? 'overview'
+  const VALID_TABS = new Set(itemDetailSectionLinks.map((s) => s.id))
+  const rawTab = searchParams.get('tab')
+  const activeTab = rawTab && VALID_TABS.has(rawTab) ? rawTab : 'overview'
   const model = useItemDetailPageModel({ id, selectedLocationId })
 
   useEffect(() => {
@@ -79,6 +82,11 @@ export default function ItemDetailPage() {
     handleTabChange('production')
   }
 
+  const handleEditItem = () => {
+    setShowEdit(true)
+    handleTabChange('configuration')
+  }
+
 
   if (model.itemQuery.isLoading) return <LoadingSpinner label="Loading item..." />
   if (model.itemQuery.isError && model.itemQuery.error) {
@@ -94,7 +102,7 @@ export default function ItemDetailPage() {
             <ItemHeader
               item={model.item}
               onBack={() => navigate('/items')}
-              onEdit={() => setShowEdit((value) => !value)}
+              onEdit={handleEditItem}
               onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
               onCreateReplenishmentPolicy={() => id && navigate(`/replenishment-policies/new?itemId=${id}&source=item`)}
               onCopyId={copyId}
@@ -138,7 +146,7 @@ export default function ItemDetailPage() {
               onViewMovements={() => navigate(model.movementLink)}
               onCreateRouting={handleCreateRouting}
             />
-            {(model.diagnostics.length > 0 || model.health.reasons.length > 0) && (
+            {(model.diagnostics.length > 0 || model.health.status !== ItemHealthStatus.READY) && (
               <ItemHealthBanner
                 health={model.health}
                 diagnostics={model.diagnostics}
@@ -148,7 +156,7 @@ export default function ItemDetailPage() {
                   if (actionId === 'create_bom') { setShowBomForm(true); handleTabChange('production') }
                   if (actionId === 'create_routing') handleCreateRouting()
                   if (actionId === 'view_movements') navigate(model.movementLink)
-                  if (actionId === 'edit_item') setShowEdit(true)
+                  if (actionId === 'edit_item') handleEditItem()
                 }}
               />
             )}

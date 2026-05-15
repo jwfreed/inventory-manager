@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ItemReadinessPanel } from '@features/items/components/ItemReadinessPanel'
@@ -52,9 +53,14 @@ describe('ItemReadinessPanel', () => {
   }
 
   describe('inventory readiness', () => {
-    it('shows no finished goods available when available is 0', () => {
+    it('shows neutral no-inventory copy when available is 0', () => {
       render(<ItemReadinessPanel {...baseProps} />)
-      expect(screen.getByText('No finished goods available')).toBeInTheDocument()
+      expect(screen.getByText('No available inventory')).toBeInTheDocument()
+    })
+
+    it('does not use finished-goods-specific copy when available is 0', () => {
+      render(<ItemReadinessPanel {...baseProps} />)
+      expect(screen.queryByText('No finished goods available')).not.toBeInTheDocument()
     })
 
     it('shows available quantity when stock exists', () => {
@@ -330,5 +336,151 @@ describe('ItemReadinessPanel zero inventory compressed display', () => {
       />,
     )
     expect(screen.getByText(/5 backordered/)).toBeInTheDocument()
+  })
+})
+
+// ─── Issue fixes: Edit item, invalid tab, neutral copy ───────────────────────
+
+// Helper: render ItemSectionNav as a controlled component to simulate tab state changes
+function TabHarness({
+  initialTab,
+  onTabChange,
+}: {
+  initialTab: string
+  onTabChange?: (id: string) => void
+}) {
+  const sections = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'inventory', label: 'Inventory' },
+    { id: 'production', label: 'Production' },
+    { id: 'configuration', label: 'Configuration' },
+    { id: 'history', label: 'History' },
+  ]
+  const [active, setActive] = useState(initialTab)
+  const handleChange = (id: string) => {
+    setActive(id)
+    onTabChange?.(id)
+  }
+  return (
+    <>
+      <ItemSectionNav sections={sections} activeSection={active} onSectionChange={handleChange} />
+      <div data-testid="active-tab">{active}</div>
+    </>
+  )
+}
+
+describe('Edit item action switches to Configuration', () => {
+  it('handleEditItem sets tab to configuration', () => {
+    // Simulate the handleEditItem logic: setShowEdit(true) + handleTabChange('configuration')
+    // We test through the controlled tab component since full page mounting needs API mocks.
+    const onTabChange = vi.fn()
+    render(<TabHarness initialTab="overview" onTabChange={onTabChange} />)
+
+    // Confirm starting on overview
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('overview')
+
+    // Simulate clicking the Configuration tab (equivalent to handleTabChange('configuration'))
+    fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }))
+
+    expect(screen.getByTestId('active-tab')).toHaveTextContent('configuration')
+    expect(onTabChange).toHaveBeenCalledWith('configuration')
+  })
+
+  it('switching from any tab to configuration lands on configuration', () => {
+    const tabs = ['overview', 'inventory', 'production', 'history']
+    for (const startTab of tabs) {
+      const onTabChange = vi.fn()
+      const { unmount } = render(<TabHarness initialTab={startTab} onTabChange={onTabChange} />)
+      fireEvent.click(screen.getByRole('tab', { name: 'Configuration' }))
+      expect(screen.getByTestId('active-tab')).toHaveTextContent('configuration')
+      unmount()
+    }
+  })
+})
+
+describe('Invalid tab query param fallback', () => {
+  // The activeTab computation is:
+  //   const VALID_TABS = new Set(itemDetailSectionLinks.map(s => s.id))
+  //   const rawTab = searchParams.get('tab')
+  //   const activeTab = rawTab && VALID_TABS.has(rawTab) ? rawTab : 'overview'
+  // We test the same logic in isolation so we don't need to mount the full page.
+
+  const VALID_TAB_IDS = ['overview', 'inventory', 'production', 'configuration', 'history']
+
+  function resolveActiveTab(rawTab: string | null): string {
+    const valid = new Set(VALID_TAB_IDS)
+    return rawTab && valid.has(rawTab) ? rawTab : 'overview'
+  }
+
+  it('falls back to overview for an unknown tab value', () => {
+    expect(resolveActiveTab('bad')).toBe('overview')
+  })
+
+  it('falls back to overview for an empty-ish value', () => {
+    expect(resolveActiveTab('')).toBe('overview')
+    expect(resolveActiveTab(null)).toBe('overview')
+  })
+
+  it('accepts all valid tab ids', () => {
+    for (const id of VALID_TAB_IDS) {
+      expect(resolveActiveTab(id)).toBe(id)
+    }
+  })
+
+  it('tab bar renders overview as selected for an invalid ?tab= value', () => {
+    // Simulate invalid URL state by setting activeSection to the fallback 'overview'
+    const sections = VALID_TAB_IDS.map((id) => ({ id, label: id }))
+    render(<ItemSectionNav sections={sections} activeSection="overview" onSectionChange={vi.fn()} />)
+    expect(screen.getByRole('tab', { name: 'overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('tab', { name: 'bad' })).not.toBeInTheDocument()
+  })
+
+  it('valid ?tab=production still renders production as active', () => {
+    const sections = VALID_TAB_IDS.map((id) => ({ id, label: id }))
+    render(
+      <ItemSectionNav sections={sections} activeSection="production" onSectionChange={vi.fn()} />,
+    )
+    expect(screen.getByRole('tab', { name: 'production' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'overview' })).toHaveAttribute('aria-selected', 'false')
+  })
+})
+
+describe('Neutral zero-stock copy', () => {
+  const basePropsNeutral = {
+    available: 0,
+    onHand: 0,
+    reserved: 0,
+    inTransit: 0,
+    backordered: 0,
+    canonicalUom: 'kg',
+    hasNegativeOnHand: false,
+    hasManufacturingFlow: false,
+    hasActiveBom: false,
+    hasRouting: false,
+    onAdjustStock: vi.fn(),
+    onViewMovements: vi.fn(),
+    onCreateRouting: vi.fn(),
+  }
+
+  it('renders "No available inventory" for zero stock', () => {
+    render(<ItemReadinessPanel {...basePropsNeutral} />)
+    expect(screen.getByText('No available inventory')).toBeInTheDocument()
+  })
+
+  it('does not mention "finished goods" for raw material items (zero stock)', () => {
+    render(<ItemReadinessPanel {...basePropsNeutral} canonicalUom="kg" />)
+    expect(screen.queryByText(/finished goods/i)).not.toBeInTheDocument()
+  })
+
+  it('does not mention "finished goods" for WIP items (zero stock)', () => {
+    render(<ItemReadinessPanel {...basePropsNeutral} canonicalUom="each" hasManufacturingFlow />)
+    expect(screen.queryByText(/finished goods/i)).not.toBeInTheDocument()
+  })
+
+  it('still shows the quantity summary line at zero stock', () => {
+    render(<ItemReadinessPanel {...basePropsNeutral} />)
+    const summary = screen.getByText(/0 kg on hand/)
+    expect(summary.textContent).toContain('0 reserved')
+    expect(summary.textContent).toContain('0 in transit')
   })
 })

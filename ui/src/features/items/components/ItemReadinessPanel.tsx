@@ -75,7 +75,7 @@ export function ItemReadinessPanel({
           </div>
         ) : (
           <div className="text-base font-semibold text-slate-950">
-            No finished goods available
+            No available inventory
           </div>
         )}
         <div className="mt-1 text-sm text-slate-600">{inventorySummaryParts.join(' · ')}</div>
