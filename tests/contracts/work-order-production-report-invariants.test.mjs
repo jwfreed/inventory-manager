@@ -61,6 +61,72 @@ async function createProductionFixture(prefix, quantity) {
   return { harness, component, output, workOrder };
 }
 
+async function createMassProductionFixture(prefix) {
+  const harness = await createServiceHarness({
+    tenantPrefix: prefix,
+    tenantName: `Contract ${prefix}`
+  });
+  const { topology } = harness;
+  const consumeLocation = topology.defaults.SELLABLE;
+  const produceLocation = topology.defaults.QA;
+  const component = await harness.createItem({
+    defaultLocationId: consumeLocation.id,
+    skuPrefix: `${prefix}-MILK-POWDER`,
+    name: 'Milk powder',
+    type: 'raw',
+    defaultUom: 'g',
+    uomDimension: 'mass',
+    canonicalUom: 'g',
+    stockingUom: 'g'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: produceLocation.id,
+    skuPrefix: `${prefix}-CHOC-BASE`,
+    name: 'Milk Chocolate Base',
+    type: 'finished',
+    defaultUom: 'kg',
+    uomDimension: 'mass',
+    canonicalUom: 'g',
+    stockingUom: 'kg'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: component.id,
+    locationId: consumeLocation.id,
+    quantity: 100,
+    unitCost: 0.04,
+    uom: 'g'
+  });
+  await harness.seedStockViaCount({
+    warehouseId: topology.warehouse.id,
+    itemId: component.id,
+    locationId: consumeLocation.id,
+    quantity: 200,
+    unitCost: 0.04,
+    uom: 'g',
+    countedAt: '2026-01-02T00:00:00.000Z'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    defaultUom: 'kg',
+    yieldQuantity: 1,
+    yieldUom: 'kg',
+    components: [{ componentItemId: component.id, quantityPer: 200, uom: 'g' }],
+    suffix: randomUUID().slice(0, 6)
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    outputItemId: output.id,
+    outputUom: 'kg',
+    quantityPlanned: 1,
+    bomId: bom.id,
+    defaultConsumeLocationId: consumeLocation.id,
+    defaultProduceLocationId: produceLocation.id
+  });
+
+  return { harness, component, output, workOrder, consumeLocation, produceLocation };
+}
+
 async function snapshotReportState(db, tenantId, workOrderId, idempotencyKey) {
   const executionResult = await db.query(
     `SELECT id,
@@ -196,6 +262,122 @@ function movementBySourceType(state, sourceType) {
   assert.ok(movement, `missing movement source type ${sourceType}`);
   return movement;
 }
+
+test('WF-6 report-production scales kg output against g components without false BOM variance', async () => {
+  const { harness, component, output, workOrder, consumeLocation, produceLocation } = await createMassProductionFixture(
+    'contract-wf6-mass'
+  );
+  const { tenantId, pool: db, topology } = harness;
+  const idempotencyKey = `contract-wf6-mass:${randomUUID()}`;
+
+  const result = await harness.reportProduction(
+    workOrder.id,
+    {
+      warehouseId: topology.warehouse.id,
+      outputQty: 1,
+      outputUom: 'kg',
+      occurredAt: '2026-03-07T00:00:00.000Z'
+    },
+    {},
+    { idempotencyKey }
+  );
+
+  const issueLineResult = await db.query(
+    `SELECT quantity_delta::numeric AS "quantityDelta",
+            quantity_delta_entered::numeric AS "quantityDeltaEntered",
+            uom_entered AS "uomEntered",
+            quantity_delta_canonical::numeric AS "quantityDeltaCanonical",
+            canonical_uom AS "canonicalUom"
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND item_id = $3`,
+    [tenantId, result.componentIssueMovementId, component.id]
+  );
+  assert.equal(issueLineResult.rowCount, 1);
+  assert.equal(Number(issueLineResult.rows[0].quantityDelta), -200);
+  assert.equal(Number(issueLineResult.rows[0].quantityDeltaEntered), -200);
+  assert.equal(issueLineResult.rows[0].uomEntered, 'g');
+  assert.equal(Number(issueLineResult.rows[0].quantityDeltaCanonical), -200);
+  assert.equal(issueLineResult.rows[0].canonicalUom, 'g');
+
+  const receiptLineResult = await db.query(
+    `SELECT quantity_delta::numeric AS "quantityDelta",
+            quantity_delta_entered::numeric AS "quantityDeltaEntered",
+            uom_entered AS "uomEntered",
+            quantity_delta_canonical::numeric AS "quantityDeltaCanonical",
+            canonical_uom AS "canonicalUom"
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND item_id = $3`,
+    [tenantId, result.productionReceiptMovementId, output.id]
+  );
+  assert.equal(receiptLineResult.rowCount, 1);
+  assert.equal(Number(receiptLineResult.rows[0].quantityDelta), 1000);
+  assert.equal(Number(receiptLineResult.rows[0].quantityDeltaEntered), 1);
+  assert.equal(receiptLineResult.rows[0].uomEntered, 'kg');
+  assert.equal(Number(receiptLineResult.rows[0].quantityDeltaCanonical), 1000);
+  assert.equal(receiptLineResult.rows[0].canonicalUom, 'g');
+
+  await assertMovementContract({
+    harness,
+    movementId: result.componentIssueMovementId,
+    expectedMovementType: 'issue',
+    expectedSourceType: 'work_order_batch_post_issue',
+    expectedLineCount: 1,
+    expectedBalances: [{ itemId: component.id, locationId: consumeLocation.id, onHand: 0 }]
+  });
+  await assertMovementContract({
+    harness,
+    movementId: result.productionReceiptMovementId,
+    expectedMovementType: 'receive',
+    expectedSourceType: 'work_order_batch_post_completion',
+    expectedLineCount: 1,
+    expectedBalances: [{ itemId: output.id, locationId: produceLocation.id, onHand: 1000 }]
+  });
+});
+
+test('WF-6 report-production kg output still rejects unapproved g component variance', async () => {
+  const { harness, component, output, workOrder, consumeLocation, produceLocation } = await createMassProductionFixture(
+    'contract-wf6-mass-variance'
+  );
+
+  await assert.rejects(
+    () => harness.recordBatch(
+      workOrder.id,
+      {
+        occurredAt: '2026-03-08T00:00:00.000Z',
+        consumeLines: [
+          {
+            componentItemId: component.id,
+            fromLocationId: consumeLocation.id,
+            uom: 'g',
+            quantity: 199,
+            reasonCode: 'work_order_backflush'
+          }
+        ],
+        produceLines: [
+          {
+            outputItemId: output.id,
+            toLocationId: produceLocation.id,
+            uom: 'kg',
+            quantity: 1,
+            reasonCode: 'work_order_production_receipt'
+          }
+        ]
+      },
+      {},
+      { idempotencyKey: `contract-wf6-mass-variance:${randomUUID()}` }
+    ),
+    (error) => {
+      assert.equal(error.code ?? error.message, 'WO_BOM_EXECUTION_VARIANCE_UNAPPROVED');
+      assert.equal(error.details?.expectedQty, 200);
+      assert.equal(error.details?.actualQty, 199);
+      return true;
+    }
+  );
+});
 
 test('WF-6 report-production same idempotency key replays stable result and authoritative write set', async () => {
   const { harness, component, output, workOrder } = await createProductionFixture(

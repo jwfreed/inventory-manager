@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg';
 import { getItem } from './masterData.service';
 import { convertToCanonical } from './uomCanonical.service';
-import { roundQuantity, toNumber } from '../lib/numbers';
+import { convertQty } from './uomConvert.service';
+import { roundQuantity } from '../lib/numbers';
 import { deriveWorkOrderStageRouting } from './stageRouting.service';
 
 type WorkOrderInvariantRow = {
@@ -40,6 +41,27 @@ function structuredError(code: string, details?: Record<string, unknown>): Struc
 
 function sortScopeKey(itemId: string, uom: string) {
   return `${itemId}:${uom}`;
+}
+
+async function convertProducedTotalToWorkOrderUom(
+  tenantId: string,
+  workOrder: WorkOrderInvariantRow,
+  produceLines: MovementLineInput[]
+) {
+  let producedTotal = 0;
+  for (const line of produceLines) {
+    const converted = await convertQty({
+      qty: line.quantity,
+      fromUom: line.uom,
+      toUom: workOrder.output_uom,
+      roundingContext: 'transfer',
+      analyticsPrecisionMode: true,
+      tenantId,
+      itemId: line.itemId
+    });
+    producedTotal = roundQuantity(producedTotal + Number(converted.exactQty));
+  }
+  return producedTotal;
 }
 
 export async function assertItemSellableInvariant(tenantId: string, itemId: string) {
@@ -101,7 +123,7 @@ export async function assertWorkOrderExecutionInvariants(params: {
   }
 
   if (workOrder.kind === 'production' && workOrder.bom_id) {
-    const producedTotal = produceLines.reduce((sum, line) => sum + line.quantity, 0);
+    const producedTotal = await convertProducedTotalToWorkOrderUom(tenantId, workOrder, produceLines);
     if (producedTotal > 0) {
       const { getWorkOrderRequirements } = await import('./workOrders.service');
       const requirements = await getWorkOrderRequirements(tenantId, workOrder.id, producedTotal);

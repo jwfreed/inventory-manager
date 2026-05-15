@@ -447,15 +447,22 @@ export async function createServiceHarness(options = {}) {
     );
   }
 
-  async function createBomAndActivate({ outputItemId, components, suffix }) {
+  async function createBomAndActivate({
+    outputItemId,
+    components,
+    suffix,
+    defaultUom = 'each',
+    yieldQuantity = 1,
+    yieldUom = 'each'
+  }) {
     const bom = await createBom(tenantId, {
       bomCode: `BOM-${suffix}-${randomUUID().slice(0, 6)}`,
       outputItemId,
-      defaultUom: 'each',
+      defaultUom,
       version: {
         versionNumber: 1,
-        yieldQuantity: 1,
-        yieldUom: 'each',
+        yieldQuantity,
+        yieldUom,
         components: components.map((component, index) => ({
           lineNumber: index + 1,
           componentItemId: component.componentItemId,
