@@ -500,6 +500,17 @@ export default function WorkOrderDetailPage() {
   const hasIssued = issuedTotal > 0
   const currentStep = !hasIssued ? 1 : remaining > 0 ? 2 : 3
   const nextStepAvailable = !isDisassembly && (nextStepBomsQuery.data?.data?.length ?? 0) > 0
+  const nextStepCtaLabel = useMemo(() => {
+    if (remaining !== 0 || !nextStepAvailable) return 'Review workspace'
+    const options = nextStepBomsQuery.data?.data ?? []
+    if (options.length === 0) return 'Review workspace'
+    if (options.length === 1) {
+      const outputName = itemLabel(options[0].outputItemId)
+      const displayName = outputName ? outputName.split(' — ')[0] : ''
+      return displayName ? `Create WO: ${displayName}` : 'Create WO'
+    }
+    return 'Choose next work order'
+  }, [remaining, nextStepAvailable, nextStepBomsQuery.data, itemLabel])
   const locationsById = useMemo(() => {
     const map = new Map<string, { code?: string; name?: string }>()
     locationsQuery.data?.data?.forEach((loc) => {
@@ -636,36 +647,82 @@ export default function WorkOrderDetailPage() {
     </div>
   ) : undefined
 
-  const contextSections = workOrderQuery.data
-    ? [
-        {
-          title: 'Entity identity',
-          rows: [
-            { label: 'Work order', value: workOrderQuery.data.number },
-            { label: 'Output item', value: itemLabel(workOrderQuery.data.outputItemId) || 'Unknown item' },
-            { label: 'Kind', value: workOrderQuery.data.kind },
-            { label: 'Status', value: workOrderQuery.data.status },
-          ],
-        },
-        {
+  const contextSections = useMemo(() => {
+    if (!workOrderQuery.data) return []
+    const wo = workOrderQuery.data
+    const uom = wo.outputUom
+    const executionLocked = actionPolicy.executionLocked
+
+    const workflowSection = {
+      title: 'Workflow status',
+      children: (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+            <span className="text-sm text-slate-500">Status</span>
+            <span className="text-sm font-semibold capitalize text-slate-900">{wo.status.replace(/_/g, ' ')}</span>
+          </div>
+          {executionLocked ? (
+            <>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                <span className="text-sm text-slate-500">Produced</span>
+                <span className="text-sm font-medium text-slate-900">{formatNumber(wo.quantityCompleted ?? 0)} {uom}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                <span className="text-sm text-slate-500">Remaining</span>
+                <span className="text-sm font-medium text-slate-900">{formatNumber(remaining)} {uom}</span>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(wo.id)}`)}
+              >
+                View movements
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" className="w-full" onClick={scrollToExecutionWorkspace}>
+              Go to workspace
+            </Button>
+          )}
+        </div>
+      ),
+    }
+
+    const hasBomData = Boolean(wo.bomId)
+    const configHealthSection = hasBomData
+      ? {
           title: 'Configuration health',
-          rows: [
-            { label: 'BOM', value: workOrderQuery.data.bomId ?? '—' },
-            { label: 'Used BOM version', value: usedBomVersion ? `v${usedBomVersion.versionNumber}` : '—' },
-            { label: 'Active BOM', value: activeVersionLabel ? `v${activeVersionLabel}` : '—' },
+          items: [
+            { label: 'BOM', value: wo.bomId ?? '—' },
+            { label: 'Used version', value: usedBomVersion ? `v${usedBomVersion.versionNumber}` : '—' },
+            { label: 'Active version', value: activeVersionLabel ? `v${activeVersionLabel}` : '—' },
             { label: 'Consume location', value: defaultConsumeLocationLabel },
           ],
-        },
-        {
-          title: 'Supporting metadata',
-          rows: [
-            { label: 'Planned qty', value: `${formatNumber(workOrderQuery.data.quantityPlanned)} ${workOrderQuery.data.outputUom}` },
-            { label: 'Completed qty', value: `${formatNumber(workOrderQuery.data.quantityCompleted ?? 0)} ${workOrderQuery.data.outputUom}` },
-            { label: 'Remaining', value: `${formatNumber(remaining)} ${workOrderQuery.data.outputUom}` },
-          ],
-        },
-      ]
-    : []
+        }
+      : null
+
+    return [
+      workflowSection,
+      {
+        title: 'Entity identity',
+        items: [
+          { label: 'Work order', value: wo.number },
+          { label: 'Output item', value: itemLabel(wo.outputItemId) || 'Unknown item' },
+          { label: 'Kind', value: wo.kind },
+        ],
+      },
+      ...(configHealthSection ? [configHealthSection] : []),
+      {
+        title: 'Quantities',
+        items: [
+          { label: 'Planned', value: `${formatNumber(wo.quantityPlanned)} ${uom}` },
+          { label: 'Completed', value: `${formatNumber(wo.quantityCompleted ?? 0)} ${uom}` },
+          { label: 'Remaining', value: `${formatNumber(remaining)} ${uom}` },
+        ],
+      },
+    ]
+  }, [workOrderQuery.data, actionPolicy.executionLocked, remaining, usedBomVersion, activeVersionLabel, defaultConsumeLocationLabel, itemLabel, navigate, scrollToExecutionWorkspace, formatNumber])
 
   const sectionLinks = isDisassembly
     ? workOrderDetailSections.filter((section) => section.id !== 'requirements')
@@ -849,6 +906,7 @@ export default function WorkOrderDetailPage() {
               )}
             </Panel>
 
+            {!actionPolicy.executionLocked && (
             <Panel title="Primary execution path" description="Recommended next step based on current execution state.">
               {isDisassembly ? (
                 <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -881,7 +939,7 @@ export default function WorkOrderDetailPage() {
                     step: 3,
                     title: 'Review movements',
                     detail: remaining === 0 ? 'Finish this step or continue production.' : 'Confirm deterministic issue and receipt postings.',
-                    cta: remaining === 0 && nextStepAvailable ? 'Create next step WO' : 'Review workspace',
+                    cta: nextStepCtaLabel,
                     onClick: () => {
                       if (remaining === 0 && nextStepAvailable) {
                         setShowNextStep(true)
@@ -914,6 +972,7 @@ export default function WorkOrderDetailPage() {
                 ))}
               </div>
             </Panel>
+            )}
           </section>
         ) : null}
 
@@ -1112,6 +1171,34 @@ export default function WorkOrderDetailPage() {
 	          </Panel>
 	        </section>
       </EntityPageLayout>
+
+      {/* Mobile-only sticky bottom bar: status + primary action */}
+      {workOrderQuery.data && (
+        <div
+          className="fixed bottom-0 inset-x-0 xl:hidden border-t border-slate-200 bg-white/95 backdrop-blur-sm px-4 py-3 flex items-center justify-between gap-3 z-40"
+          aria-label="Work order status bar"
+        >
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Status</div>
+            <div className="text-sm font-semibold capitalize text-slate-900">
+              {workOrderQuery.data.status.replace(/_/g, ' ')}
+            </div>
+          </div>
+          {actionPolicy.executionLocked ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)}
+            >
+              View movements
+            </Button>
+          ) : (
+            <Button size="sm" onClick={scrollToExecutionWorkspace}>
+              Go to workspace
+            </Button>
+          )}
+        </div>
+      )}
 
       <WorkOrderCancelModal
         isOpen={showCancelConfirm}

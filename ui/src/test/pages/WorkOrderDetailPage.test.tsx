@@ -539,4 +539,186 @@ describe('WorkOrderDetailPage tabs', () => {
 
     expect(screen.getByRole('button', { name: 'Ready Work Order' })).toBeInTheDocument()
   })
+
+  it('shows contextual CTA when a single next-step BOM is available', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseItemsList.mockReturnValue({
+      data: { data: [{ id: 'item-2', name: 'Milk Chocolate Bar 75g', sku: 'MCB-75' }] },
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: { data: [{ id: 'bom-2', bomCode: 'BOM-BAR', outputItemId: 'item-2', defaultUom: 'units' }] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'ready', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: null,
+        },
+        issuedTotals: [{ itemId: 'item-1', quantityIssued: 10 }],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.getByRole('button', { name: 'Create WO: Milk Chocolate Bar 75g' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create next step WO' })).not.toBeInTheDocument()
+  })
+
+  it('shows "Choose next work order" CTA when multiple next-step BOMs are available', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseItemsList.mockReturnValue({
+      data: {
+        data: [
+          { id: 'item-2', name: 'Bar A', sku: 'BAR-A' },
+          { id: 'item-3', name: 'Bar B', sku: 'BAR-B' },
+        ],
+      },
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: {
+        data: [
+          { id: 'bom-2', bomCode: 'BOM-A', outputItemId: 'item-2', defaultUom: 'units' },
+          { id: 'bom-3', bomCode: 'BOM-B', outputItemId: 'item-3', defaultUom: 'units' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'ready', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: null,
+        },
+        issuedTotals: [{ itemId: 'item-1', quantityIssued: 10 }],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.getByRole('button', { name: 'Choose next work order' })).toBeInTheDocument()
+  })
+
+  it('hides Primary execution path panel for completed work orders', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.queryByText('Primary execution path')).not.toBeInTheDocument()
+  })
+
+  it('shows workflow status section in context rail with status label', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.getByText('Workflow status')).toBeInTheDocument()
+    expect(screen.getAllByText('ready').length).toBeGreaterThan(0)
+  })
+
+  it('shows context rail workflow section with View movements for completed work orders', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    // The workflow status section in context rail should show produced/remaining
+    expect(screen.getByText('Produced')).toBeInTheDocument()
+    expect(screen.getAllByText('Remaining').length).toBeGreaterThan(0)
+  })
+
+  it('does not render Configuration health section when work order has no BOM', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'draft', bomId: undefined }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByText('Configuration health')).not.toBeInTheDocument()
+  })
 })
