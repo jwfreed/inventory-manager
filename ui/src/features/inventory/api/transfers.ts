@@ -11,6 +11,8 @@ export type InventoryTransferCreatePayload = {
   uom: string
   occurredAt?: string
   reasonCode?: string
+  referenceType?: 'manual' | 'work_order' | 'purchase_order'
+  referenceId?: string
   notes?: string
 }
 

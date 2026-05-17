@@ -40,6 +40,19 @@ function requirePersistedLineId(
   return lineId;
 }
 
+function mergeMovementMetadata(
+  plannedMetadata: Record<string, unknown> | null | undefined,
+  overrideMetadata: Record<string, unknown> | null | undefined
+) {
+  if (!plannedMetadata && !overrideMetadata) {
+    return null;
+  }
+  return {
+    ...(plannedMetadata ?? {}),
+    ...(overrideMetadata ?? {})
+  };
+}
+
 function compareLockedTransferTarget(
   left: { locationId: string; itemId: string; uom: string },
   right: { locationId: string; itemId: string; uom: string }
@@ -215,7 +228,7 @@ export async function executeTransferMovementPlan(
     id: uuidv4(),
     ...movementPlan.persistInput,
     lines: movementPlan.persistInput.lines.map((line) => ({ ...line })),
-    metadata: validation.overrideMetadata ?? null
+    metadata: mergeMovementMetadata(movementPlan.persistInput.metadata, validation.overrideMetadata)
   });
 
   const result = {

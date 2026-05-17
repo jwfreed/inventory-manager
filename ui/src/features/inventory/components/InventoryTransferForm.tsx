@@ -9,6 +9,8 @@ export type InventoryTransferFormValues = {
   uom: string
   occurredAt: string
   reasonCode: string
+  referenceType: '' | 'manual' | 'work_order' | 'purchase_order'
+  referenceId: string
   notes: string
 }
 
@@ -103,12 +105,25 @@ export function InventoryTransferForm({
       </div>
 
       <label className="space-y-1 text-sm">
-        <span className="text-xs uppercase tracking-wide text-slate-500">Reason code</span>
-        <Input
-          value={value.reasonCode}
-          disabled={isDisabled}
-          onChange={(event) => onChange('reasonCode', event.target.value)}
-        />
+        <span className="text-xs uppercase tracking-wide text-slate-500">Reference</span>
+        <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+          <select
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            value={value.referenceType}
+            disabled={isDisabled}
+            onChange={(event) => onChange('referenceType', event.target.value as InventoryTransferFormValues['referenceType'])}
+          >
+            <option value="">Manual transfer</option>
+            <option value="work_order">Work order</option>
+            <option value="purchase_order">Purchase order</option>
+          </select>
+          <Input
+            value={value.referenceId}
+            disabled={isDisabled}
+            placeholder="Reference ID or number"
+            onChange={(event) => onChange('referenceId', event.target.value)}
+          />
+        </div>
       </label>
 
       <label className="space-y-1 text-sm">

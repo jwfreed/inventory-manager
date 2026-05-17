@@ -21,7 +21,7 @@ export function TransferOperationPanel({
   return (
     <Panel
       title="Transfer details"
-      description="Use this screen for direct operational transfers. Negative overrides are intentionally unavailable."
+      description="Post a balanced source and destination movement without using inventory adjustment."
     >
       {validationMessages.length > 0 ? (
         <Alert
@@ -61,6 +61,16 @@ export function TransferOperationPanel({
             <div className="mt-1">Transfer ID: {result.transferId}</div>
             <div className="mt-1">Movement ID: {result.movementId ?? 'Unavailable'}</div>
             <div className="mt-1">Replay state: {result.replayed ? 'Replayed' : 'Posted'}</div>
+            {result.movements?.length ? (
+              <div className="mt-2 space-y-1">
+                {result.movements.map((movement) => (
+                  <div key={`${movement.type}:${movement.locationId}`}>
+                    {movement.quantity > 0 ? '+' : ''}
+                    {movement.quantity} {movement.uom} {movement.type === 'transfer_out' ? 'from' : 'to'} {movement.locationId}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

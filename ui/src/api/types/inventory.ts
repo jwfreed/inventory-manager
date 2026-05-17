@@ -84,6 +84,13 @@ export type InventoryTransferResult = {
   movementId: string
   idempotencyKey?: string | null
   replayed?: boolean
+  movements?: {
+    type: 'transfer_out' | 'transfer_in'
+    itemId: string
+    locationId: string
+    quantity: number
+    uom: string
+  }[]
 }
 
 export type InventoryCountLine = {

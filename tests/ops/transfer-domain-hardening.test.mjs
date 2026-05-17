@@ -18,6 +18,9 @@ const {
 const {
   createUomConversion
 } = require('../../src/services/masterData.service.ts');
+const {
+  getWorkOrderReadiness
+} = require('../../src/services/workOrderReadiness.service.ts');
 
 async function createTransferFixture(label) {
   const harness = await createServiceHarness({
@@ -179,6 +182,80 @@ test('transfer planning is deterministic and enforces location-level quantity, u
   } finally {
     client.release();
   }
+});
+
+test('work order readiness exposes same-uom stock elsewhere and clears location shortage after transfer', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'transfer-wo-readiness',
+    tenantName: 'Transfer Work Order Readiness'
+  });
+  const requiredStore = harness.topology.defaults.SELLABLE;
+  const sourceStore = await harness.createWarehouseWithSellable(`ELSEWHERE-${randomUUID().slice(0, 6)}`);
+  const component = await harness.createItem({
+    defaultLocationId: requiredStore.id,
+    skuPrefix: 'WRAP',
+    type: 'packaging'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: requiredStore.id,
+    skuPrefix: 'BAR',
+    type: 'finished'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    suffix: 'TRANSFER-WO',
+    components: [{ componentItemId: component.id, quantityPer: 1, uom: 'each' }],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: output.id,
+    outputUom: 'each',
+    quantityPlanned: 10,
+    defaultConsumeLocationId: requiredStore.id,
+    defaultProduceLocationId: requiredStore.id
+  });
+  await harness.seedStockViaCount({
+    warehouseId: sourceStore.warehouse.id,
+    itemId: component.id,
+    locationId: sourceStore.sellable.id,
+    quantity: 100,
+    unitCost: 1
+  });
+
+  const before = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+  assert.equal(before.hasShortage, true);
+  assert.equal(before.lines[0].shortage, 10);
+  assert.deepEqual(before.lines[0].availableElsewhere, [
+    {
+      locationId: sourceStore.sellable.id,
+      locationCode: sourceStore.sellable.code,
+      locationName: sourceStore.sellable.name,
+      warehouseId: sourceStore.warehouse.id,
+      uom: 'each',
+      available: 100
+    }
+  ]);
+
+  await harness.postTransfer({
+    sourceLocationId: sourceStore.sellable.id,
+    destinationLocationId: requiredStore.id,
+    itemId: component.id,
+    quantity: 10,
+    uom: 'each',
+    reasonCode: 'work_order_material_move',
+    notes: `Move material for work order ${workOrder.number}`,
+    idempotencyKey: `wo-readiness-transfer-${randomUUID()}`
+  });
+
+  const after = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+  assert.equal(after.hasShortage, false);
+  assert.equal(after.lines[0].available, 10);
+  assert.equal(after.lines[0].shortage, 0);
 });
 
 test('transfer policy rejects same-location transfers', async () => {

@@ -9,6 +9,7 @@ type Props = {
   onBack: () => void
   onEdit: () => void
   onAdjustStock: () => void
+  onTransferStock: () => void
   onCreateReplenishmentPolicy?: () => void
   onCopyId: () => void
   idCopied?: boolean
@@ -32,6 +33,7 @@ export function ItemHeader({
   onBack,
   onEdit,
   onAdjustStock,
+  onTransferStock,
   onCreateReplenishmentPolicy,
   onCopyId,
   idCopied = false,
@@ -62,6 +64,9 @@ export function ItemHeader({
               </Button>
               <Button variant="secondary" size="sm" onClick={onAdjustStock}>
                 Adjust stock
+              </Button>
+              <Button variant="secondary" size="sm" onClick={onTransferStock}>
+                Transfer stock
               </Button>
               <div className="flex items-center gap-1.5 pl-1">
                 {onCreateReplenishmentPolicy ? (

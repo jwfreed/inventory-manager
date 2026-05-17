@@ -82,6 +82,18 @@ function mapPersistMovementLine(
   };
 }
 
+function buildTransferMetadata(prepared: PreparedTransferMutation): Record<string, unknown> | null {
+  if (!prepared.referenceType && !prepared.referenceId) {
+    return null;
+  }
+  return {
+    transfer: {
+      referenceType: prepared.referenceType,
+      referenceId: prepared.referenceId
+    }
+  };
+}
+
 export function assertTransferMovementPlanInvariants(
   prepared: PreparedTransferMutation,
   lines: ReadonlyArray<PlannedTransferMovementLine>
@@ -237,7 +249,7 @@ export async function buildTransferMovementPlan(
       occurredAt: prepared.occurredAt,
       postedAt: prepared.occurredAt,
       notes: prepared.notes,
-      metadata: null,
+      metadata: buildTransferMetadata(prepared),
       createdAt: prepared.occurredAt,
       updatedAt: prepared.occurredAt,
       lotId: prepared.lotId,

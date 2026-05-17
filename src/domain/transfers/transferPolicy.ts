@@ -38,6 +38,8 @@ export type TransferPolicyInput = {
   qcAction?: 'accept' | 'hold' | 'reject';
   reasonCode?: string;
   notes?: string;
+  referenceType?: 'manual' | 'work_order' | 'purchase_order' | null;
+  referenceId?: string | null;
   occurredAt?: Date;
   actorId?: string | null;
   overrideNegative?: boolean;
@@ -65,6 +67,8 @@ export type PreparedTransferMutation = Readonly<{
   qcAction?: 'accept' | 'hold' | 'reject';
   reasonCode: string;
   notes: string;
+  referenceType: 'manual' | 'work_order' | 'purchase_order' | null;
+  referenceId: string | null;
   occurredAt: Date;
   actorId: string | null;
   overrideNegative: boolean;
@@ -238,6 +242,8 @@ export async function prepareTransferMutation(
     qcAction: input.qcAction,
     reasonCode: input.reasonCode ?? 'transfer',
     notes: input.notes ?? 'Inventory transfer',
+    referenceType: input.referenceType ?? null,
+    referenceId: input.referenceId?.trim() || null,
     occurredAt: resolveTransferOccurredAt(input.occurredAt),
     actorId: input.actorId ?? null,
     overrideNegative: input.overrideNegative ?? false,

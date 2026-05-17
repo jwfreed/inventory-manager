@@ -60,6 +60,8 @@ export type TransferInventoryInput = {
   qcAction?: 'accept' | 'hold' | 'reject';
   reasonCode?: string;
   notes?: string;
+  referenceType?: 'manual' | 'work_order' | 'purchase_order' | null;
+  referenceId?: string | null;
   occurredAt?: Date;
   actorId?: string | null;
   overrideNegative?: boolean;
@@ -102,6 +104,8 @@ export type TransferPostInput = {
   occurredAt?: Date;
   reasonCode?: string;
   notes?: string;
+  referenceType?: 'manual' | 'work_order' | 'purchase_order' | null;
+  referenceId?: string | null;
   actorId?: string | null;
   overrideNegative?: boolean;
   overrideReason?: string | null;
@@ -184,6 +188,8 @@ function buildTransferInventoryRequestBody(input: TransferInventoryInput) {
     qcAction: input.qcAction ?? null,
     reasonCode: input.reasonCode ?? 'transfer',
     notes: input.notes ?? 'Inventory transfer',
+    referenceType: input.referenceType ?? null,
+    referenceId: input.referenceId?.trim() || null,
     occurredAt: input.occurredAt ? input.occurredAt.toISOString() : null,
     overrideNegative: input.overrideNegative ?? false,
     overrideReason: input.overrideReason ?? null
@@ -545,6 +551,8 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
     movementType: 'transfer',
     reasonCode: input.reasonCode ?? 'transfer',
     notes: input.notes ?? 'Inventory transfer',
+    referenceType: input.referenceType ?? null,
+    referenceId: input.referenceId ?? null,
     occurredAt: input.occurredAt,
     actorId: input.actorId ?? null,
     overrideNegative: input.overrideNegative ?? false,
@@ -565,6 +573,8 @@ export async function postInventoryTransfer(input: TransferPostInput): Promise<T
       movementType: 'transfer',
       reasonCode: input.reasonCode ?? 'transfer',
       notes: input.notes ?? 'Inventory transfer',
+      referenceType: input.referenceType ?? null,
+      referenceId: input.referenceId ?? null,
       occurredAt: input.occurredAt,
       actorId: input.actorId ?? null,
       overrideNegative: input.overrideNegative ?? false,

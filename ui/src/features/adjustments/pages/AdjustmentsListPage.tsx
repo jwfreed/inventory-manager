@@ -55,7 +55,8 @@ export default function AdjustmentsListPage() {
         {!hideTitle && <h2 className="text-2xl font-semibold text-slate-900">Inventory adjustments</h2>}
         <p className="max-w-3xl text-sm text-slate-600">
           Adjustments are append-only corrections to the movement ledger. Drafts can be edited, posted
-          adjustments are immutable, and corrections are done by reversal entries.
+          adjustments are immutable, and corrections are done by reversal entries. To move stock between locations,
+          use Transfer stock.
         </p>
       </div>
 

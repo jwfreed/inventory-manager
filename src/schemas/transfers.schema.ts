@@ -17,6 +17,8 @@ export const inventoryTransferCreateSchema = z.object({
   uom: uomSchema.max(32),
   occurredAt: isoDateTimeString.optional(),
   reasonCode: z.string().max(255).optional(),
+  referenceType: z.enum(['manual', 'work_order', 'purchase_order']).optional(),
+  referenceId: z.string().trim().max(255).optional(),
   notes: z.string().max(2000).optional(),
   overrideNegative: z.boolean().optional(),
   overrideReason: z.string().max(2000).optional()

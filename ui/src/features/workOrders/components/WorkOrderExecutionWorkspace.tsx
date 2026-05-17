@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { useAuth } from '@shared/auth'
 import type { WorkOrder, WorkOrderDisassemblyPlan, WorkOrderReadiness } from '@api/types'
@@ -30,6 +31,21 @@ function buildLocationLabel(location?: { code?: string | null; name?: string | n
   if (!location) return 'Unresolved'
   if (location.code && location.name) return `${location.code} — ${location.name}`
   return location.name || location.code || 'Unresolved'
+}
+
+function buildTransferHref(workOrder: WorkOrder, line: WorkOrderReadiness['lines'][number]) {
+  const source = line.availableElsewhere?.find((entry) => entry.available > 0 && entry.uom === line.uom)
+  if (!source || !line.consumeLocationId || line.shortage <= 0) return null
+  const params = new URLSearchParams({
+    itemId: line.componentItemId,
+    fromLocationId: source.locationId,
+    toLocationId: line.consumeLocationId,
+    quantity: String(Math.min(line.shortage, source.available)),
+    uom: line.uom,
+    referenceType: 'work_order',
+    referenceId: workOrder.number || workOrder.id,
+  })
+  return `/inventory-transfers/new?${params.toString()}`
 }
 
 export function WorkOrderExecutionWorkspace({
@@ -260,25 +276,40 @@ export function WorkOrderExecutionWorkspace({
                 <th className="pb-2 pr-4">Reserved</th>
                 <th className="pb-2 pr-4">Available</th>
                 <th className="pb-2 pr-4">Shortage</th>
+                <th className="pb-2 pr-4">Action</th>
               </tr>
             </thead>
             <tbody>
-              {(readiness?.lines ?? []).map((line) => (
-                <tr key={`${line.componentItemId}-${line.lineNumber}`} className="border-t border-slate-100">
-                  <td className="py-2 pr-4 text-slate-900">
-                    {line.componentItemName || line.componentItemSku || line.componentItemId}
-                  </td>
-                  <td className="py-2 pr-4 text-slate-600">
-                    {buildLocationLabel({ code: line.consumeLocationCode, name: line.consumeLocationName })}
-                  </td>
-                  <td className="py-2 pr-4 text-slate-900">{formatNumber(line.required)} {line.uom}</td>
-                  <td className="py-2 pr-4 text-slate-600">{formatNumber(line.reserved)} {line.uom}</td>
-                  <td className="py-2 pr-4 text-slate-600">{formatNumber(line.available)} {line.uom}</td>
-                  <td className={`py-2 pr-4 font-semibold ${line.shortage > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                    {formatNumber(line.shortage)} {line.uom}
-                  </td>
-                </tr>
-              ))}
+              {(readiness?.lines ?? []).map((line) => {
+                const transferHref = buildTransferHref(workOrder, line)
+                return (
+                  <tr key={`${line.componentItemId}-${line.lineNumber}`} className="border-t border-slate-100">
+                    <td className="py-2 pr-4 text-slate-900">
+                      {line.componentItemName || line.componentItemSku || line.componentItemId}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-600">
+                      {buildLocationLabel({ code: line.consumeLocationCode, name: line.consumeLocationName })}
+                    </td>
+                    <td className="py-2 pr-4 text-slate-900">{formatNumber(line.required)} {line.uom}</td>
+                    <td className="py-2 pr-4 text-slate-600">{formatNumber(line.reserved)} {line.uom}</td>
+                    <td className="py-2 pr-4 text-slate-600">{formatNumber(line.available)} {line.uom}</td>
+                    <td className={`py-2 pr-4 font-semibold ${line.shortage > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                      {formatNumber(line.shortage)} {line.uom}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {transferHref ? (
+                        <Link to={transferHref}>
+                          <Button variant="secondary" size="sm">
+                            Move available stock
+                          </Button>
+                        </Link>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>

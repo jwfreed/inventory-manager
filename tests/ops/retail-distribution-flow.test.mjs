@@ -335,6 +335,22 @@ test('retail distribution flow: WO->QA, QC accept, transfer to store, reserve+fu
     }
   });
   assert.equal(transferRes.res.status, 201, JSON.stringify(transferRes.payload));
+  assert.deepEqual(transferRes.payload.movements, [
+    {
+      type: 'transfer_out',
+      itemId: fgItemId,
+      locationId: factory.defaults.SELLABLE.id,
+      quantity: -6,
+      uom: 'each'
+    },
+    {
+      type: 'transfer_in',
+      itemId: fgItemId,
+      locationId: store.sellable.id,
+      quantity: 6,
+      uom: 'each'
+    }
+  ]);
   const transferMovementId = transferRes.payload.movementId;
 
   const transferCostRes = await db.query(

@@ -15,6 +15,7 @@ type Props = {
   hasActiveBom: boolean
   hasRouting: boolean
   onAdjustStock: () => void
+  onTransferStock: () => void
   onViewMovements: () => void
   onCreateRouting: () => void
 }
@@ -31,6 +32,7 @@ export function ItemReadinessPanel({
   hasActiveBom,
   hasRouting,
   onAdjustStock,
+  onTransferStock,
   onViewMovements,
   onCreateRouting,
 }: Props) {
@@ -87,6 +89,9 @@ export function ItemReadinessPanel({
         <div className="mt-3 flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" onClick={onAdjustStock}>
             Adjust stock
+          </Button>
+          <Button variant="secondary" size="sm" onClick={onTransferStock}>
+            Transfer stock
           </Button>
           <Button variant="secondary" size="sm" onClick={onViewMovements}>
             View movements

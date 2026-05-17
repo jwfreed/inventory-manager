@@ -43,6 +43,7 @@ type Props = {
   onLocationChange: (locationId: string) => void
   onViewMovements: () => void
   onAdjustStock: () => void
+  onTransferStock: () => void
 }
 
 function formatLocation(row: InventorySnapshotRow, locationLookup: Map<string, LocationMeta>) {
@@ -88,6 +89,7 @@ export function ItemInventorySection({
   onLocationChange,
   onViewMovements,
   onAdjustStock,
+  onTransferStock,
 }: Props) {
   const stageGroups = useMemo(
     () =>
@@ -154,6 +156,9 @@ export function ItemInventorySection({
             </select>
             <Button variant="secondary" size="sm" onClick={onViewMovements}>
               View movements
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onTransferStock}>
+              Transfer stock
             </Button>
           </div>
         }

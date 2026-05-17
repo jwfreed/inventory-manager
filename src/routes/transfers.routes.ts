@@ -27,6 +27,8 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
       reasonCode: parsed.data.reasonCode ?? 'transfer',
       notes: parsed.data.notes ?? 'Inventory transfer',
       occurredAt: parsed.data.occurredAt ? new Date(parsed.data.occurredAt) : undefined,
+      referenceType: parsed.data.referenceType ?? null,
+      referenceId: parsed.data.referenceId ?? null,
       actorId: req.auth?.userId ?? null,
       overrideNegative: parsed.data.overrideNegative ?? false,
       overrideReason: parsed.data.overrideReason ?? null,
@@ -51,7 +53,23 @@ router.post('/inventory-transfers', async (req: Request, res: Response) => {
       movement_id: result.movementId,
       idempotencyKey: result.idempotencyKey,
       idempotency_key: result.idempotencyKey,
-      replayed: result.replayed
+      replayed: result.replayed,
+      movements: [
+        {
+          type: 'transfer_out',
+          itemId: parsed.data.itemId,
+          locationId: parsed.data.sourceLocationId,
+          quantity: -parsed.data.quantity,
+          uom: parsed.data.uom
+        },
+        {
+          type: 'transfer_in',
+          itemId: parsed.data.itemId,
+          locationId: parsed.data.destinationLocationId,
+          quantity: parsed.data.quantity,
+          uom: parsed.data.uom
+        }
+      ]
     });
   } catch (error: any) {
     if (mapTxRetryExhausted(error, res)) {

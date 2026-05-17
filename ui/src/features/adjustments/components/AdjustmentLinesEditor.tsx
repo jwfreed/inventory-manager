@@ -55,7 +55,7 @@ export function AdjustmentLinesEditor({
   return (
     <div className="space-y-3">
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        Signed quantities: positive adds stock (found/correction), negative removes stock (shrinkage/damage).
+        Signed quantities correct count discrepancies: positive adds found stock, negative removes shrinkage or damage. Use Transfer stock for location moves.
       </div>
       {lines.map((line, idx) => {
         const errors = lineErrors?.[line.key]

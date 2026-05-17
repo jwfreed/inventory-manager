@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useItemsList } from '@features/items/queries'
 import { useLocationsList } from '@features/locations/queries'
@@ -12,25 +12,28 @@ import { ledgerQueryKeys } from '@features/ledger/queries'
 import { formatTransferOperationError } from '../lib/inventoryOperationErrorMessaging'
 import { logOperationalMutationFailure } from '../../../lib/operationalLogging'
 
-function createInitialValues(): InventoryTransferFormValues {
+function createInitialValues(searchParams?: URLSearchParams): InventoryTransferFormValues {
   const now = new Date()
   const offset = now.getTimezoneOffset()
   const local = new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 16)
   return {
-    itemId: '',
-    sourceLocationId: '',
-    destinationLocationId: '',
-    quantity: '',
-    uom: '',
+    itemId: searchParams?.get('itemId') ?? '',
+    sourceLocationId: searchParams?.get('fromLocationId') ?? searchParams?.get('sourceLocationId') ?? '',
+    destinationLocationId: searchParams?.get('toLocationId') ?? searchParams?.get('destinationLocationId') ?? '',
+    quantity: searchParams?.get('quantity') ?? '',
+    uom: searchParams?.get('uom') ?? '',
     occurredAt: local,
     reasonCode: 'transfer',
+    referenceType: (searchParams?.get('referenceType') as InventoryTransferFormValues['referenceType']) ?? '',
+    referenceId: searchParams?.get('referenceId') ?? '',
     notes: '',
   }
 }
 
 export function InventoryTransferCreatePage() {
   const queryClient = useQueryClient()
-  const [formValues, setFormValues] = useState<InventoryTransferFormValues>(() => createInitialValues())
+  const [searchParams] = useSearchParams()
+  const [formValues, setFormValues] = useState<InventoryTransferFormValues>(() => createInitialValues(searchParams))
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [validationMessages, setValidationMessages] = useState<string[]>([])
 
@@ -74,6 +77,8 @@ export function InventoryTransferCreatePage() {
         uom: formValues.uom,
         occurredAt: formValues.occurredAt ? new Date(formValues.occurredAt).toISOString() : undefined,
         reasonCode: formValues.reasonCode.trim() || undefined,
+        referenceType: formValues.referenceType || undefined,
+        referenceId: formValues.referenceId.trim() || undefined,
         notes: formValues.notes.trim() || undefined,
       }),
     onSuccess: async () => {
@@ -115,11 +120,27 @@ export function InventoryTransferCreatePage() {
     return errors
   }
 
+  const selectedSourceLocation = useMemo(
+    () => locationOptions.find((location) => location.value === formValues.sourceLocationId),
+    [formValues.sourceLocationId, locationOptions],
+  )
+  const selectedDestinationLocation = useMemo(
+    () => locationOptions.find((location) => location.value === formValues.destinationLocationId),
+    [formValues.destinationLocationId, locationOptions],
+  )
+  const transferQuantity = Number(formValues.quantity)
+  const showPreview = Boolean(formValues.itemId || formValues.sourceLocationId || formValues.destinationLocationId || formValues.quantity || formValues.uom)
+  const previewQuantity = Number.isFinite(transferQuantity) && transferQuantity > 0 ? transferQuantity : 0
+  const previewUom = formValues.uom.trim() || selectedItem?.stockingUom || selectedItem?.defaultUom || 'units'
+  const previewItemLabel = selectedItem?.sku ? `${selectedItem.sku} - ${selectedItem.name}` : selectedItem?.name || 'Selected item'
+  const previewSourceLabel = selectedSourceLocation?.label ?? 'Source location'
+  const previewDestinationLabel = selectedDestinationLocation?.label ?? 'Destination location'
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Inventory transfer"
-        subtitle="Post one authoritative location-to-location transfer."
+        title="New stock transfer"
+        subtitle="Move stock between locations without changing total quantity."
         action={
           <Link to="/inventory-counts">
             <Button variant="secondary" size="sm">
@@ -172,6 +193,15 @@ export function InventoryTransferCreatePage() {
             transferMutation.mutate()
           }}
         />
+        {showPreview ? (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+            <div className="font-semibold text-slate-900">Transfer preview</div>
+            <div className="mt-2 font-medium text-slate-900">{previewItemLabel}</div>
+            <div className="mt-1">-{previewQuantity} {previewUom} from {previewSourceLabel}</div>
+            <div className="mt-1">+{previewQuantity} {previewUom} to {previewDestinationLabel}</div>
+            <div className="mt-2 font-semibold text-slate-900">Net item change: 0 {previewUom}</div>
+          </div>
+        ) : null}
       </TransferOperationPanel>
     </div>
   )

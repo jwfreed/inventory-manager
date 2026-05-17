@@ -59,7 +59,7 @@ export default function AdjustmentNewPage() {
   const locationIdFromQuery = searchParams.get('locationId') ?? ''
   const fromAdjustmentId = searchParams.get('fromAdjustmentId') ?? ''
   const lineIdsParam = searchParams.get('lineIds') ?? ''
-  const lineIds = lineIdsParam ? lineIdsParam.split(',') : []
+  const lineIds = useMemo(() => (lineIdsParam ? lineIdsParam.split(',') : []), [lineIdsParam])
 
   const [lockItemId, setLockItemId] = useState<string | null>(itemIdFromQuery || null)
   const [lockLocationId, setLockLocationId] = useState<string | null>(locationIdFromQuery || null)
@@ -264,7 +264,7 @@ export default function AdjustmentNewPage() {
       navigate(`/inventory-adjustments/${adjustment.id}`)
     } catch (err) {
       const apiErr = err as ApiError
-      const detailPayload = apiErr?.details as { error?: any } | undefined
+      const detailPayload = apiErr?.details as { error?: { code?: string; message?: string } } | undefined
       const errorBody = detailPayload?.error ?? detailPayload
       if (errorBody?.code === 'DISCRETE_UOM_REQUIRES_INTEGER') {
         setSubmitError(errorBody.message ?? 'Whole units only for count items.')
@@ -284,7 +284,9 @@ export default function AdjustmentNewPage() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold text-slate-900">New inventory adjustment</h2>
-          <p className="text-sm text-slate-600">Create a draft and post when ready.</p>
+          <p className="text-sm text-slate-600">
+            Correct stock count discrepancies. To move stock between locations, use Transfer stock.
+          </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => navigate('/inventory-adjustments')}>
           Back to list
@@ -366,7 +368,10 @@ export default function AdjustmentNewPage() {
             </Card>
           </Section>
 
-          <Section title="Lines" description="Each line is a signed delta at a specific item and location.">
+          <Section
+            title="Lines"
+            description="Each line is a signed discrepancy delta at a specific item and location."
+          >
           <AdjustmentLinesEditor
             lines={lines}
             itemOptions={itemOptions}

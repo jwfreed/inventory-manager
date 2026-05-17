@@ -68,7 +68,11 @@ export default function ItemDetailPage() {
 
   const updateLocationScope = (nextLocationId: string) => {
     const nextParams = new URLSearchParams(searchParams)
-    nextLocationId ? nextParams.set('locationId', nextLocationId) : nextParams.delete('locationId')
+    if (nextLocationId) {
+      nextParams.set('locationId', nextLocationId)
+    } else {
+      nextParams.delete('locationId')
+    }
     setSearchParams(nextParams)
   }
 
@@ -87,6 +91,7 @@ export default function ItemDetailPage() {
     handleTabChange('configuration')
   }
 
+  const transferStockHref = id ? `/inventory-transfers/new?itemId=${id}` : '/inventory-transfers/new'
 
   if (model.itemQuery.isLoading) return <LoadingSpinner label="Loading item..." />
   if (model.itemQuery.isError && model.itemQuery.error) {
@@ -104,6 +109,7 @@ export default function ItemDetailPage() {
               onBack={() => navigate('/items')}
               onEdit={handleEditItem}
               onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+              onTransferStock={() => navigate(transferStockHref)}
               onCreateReplenishmentPolicy={() => id && navigate(`/replenishment-policies/new?itemId=${id}&source=item`)}
               onCopyId={copyId}
               idCopied={idCopied}
@@ -143,6 +149,7 @@ export default function ItemDetailPage() {
               hasActiveBom={model.healthConfiguration.hasActiveBom}
               hasRouting={model.healthConfiguration.hasRouting}
               onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+              onTransferStock={() => navigate(transferStockHref)}
               onViewMovements={() => navigate(model.movementLink)}
               onCreateRouting={handleCreateRouting}
             />
@@ -180,6 +187,7 @@ export default function ItemDetailPage() {
             onLocationChange={updateLocationScope}
             onViewMovements={() => navigate(model.movementLink)}
             onAdjustStock={() => id && navigate(`/inventory-adjustments/new?itemId=${id}`)}
+            onTransferStock={() => navigate(transferStockHref)}
           />
         )}
         {activeTab === 'production' && (

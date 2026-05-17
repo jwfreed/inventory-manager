@@ -66,6 +66,14 @@ export type WorkOrderReadinessLine = WorkOrderRequirementLine & {
   consumeLocationCode?: string | null
   consumeLocationName?: string | null
   consumeLocationRole?: string | null
+  availableElsewhere?: {
+    locationId: string
+    locationCode?: string | null
+    locationName?: string | null
+    warehouseId: string
+    uom: string
+    available: number
+  }[]
 }
 
 export type WorkOrderReadiness = {

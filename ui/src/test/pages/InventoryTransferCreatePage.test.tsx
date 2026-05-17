@@ -16,13 +16,16 @@ vi.mock('@features/inventory/api/transfers', () => ({
 }))
 vi.mock('@features/inventory/components/InventoryTransferForm', () => ({
   InventoryTransferForm: ({
+    value,
     onChange,
     onSubmit,
   }: {
+    value: Record<string, string>
     onChange: (field: string, value: string) => void
     onSubmit: () => void
   }) => (
     <div>
+      <div data-testid="transfer-form-values">{JSON.stringify(value)}</div>
       <button type="button" onClick={() => onSubmit()}>
         __submit_transfer__
       </button>
@@ -62,7 +65,7 @@ const mockedUseItemsList = vi.mocked(useItemsList)
 const mockedUseLocationsList = vi.mocked(useLocationsList)
 const mockedCreateInventoryTransfer = vi.mocked(createInventoryTransfer)
 
-function renderPage() {
+function renderPage(initialEntry = '/inventory-transfers/new') {
   const router = createMemoryRouter(
     [
       {
@@ -70,7 +73,7 @@ function renderPage() {
         element: <InventoryTransferCreatePage />,
       },
     ],
-    { initialEntries: ['/inventory-transfers/new'] },
+    { initialEntries: [initialEntry] },
   )
   return renderWithQueryClient(<RouterProvider router={router} />)
 }
@@ -78,13 +81,13 @@ function renderPage() {
 describe('InventoryTransferCreatePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockedUseItemsList.mockReturnValue({ data: { data: [] } } as any)
-    mockedUseLocationsList.mockReturnValue({ data: { data: [] } } as any)
+    mockedUseItemsList.mockReturnValue({ data: { data: [] } } as unknown as ReturnType<typeof useItemsList>)
+    mockedUseLocationsList.mockReturnValue({ data: { data: [] } } as unknown as ReturnType<typeof useLocationsList>)
     mockedCreateInventoryTransfer.mockResolvedValue({
       transferId: 'transfer-1',
       movementId: 'movement-1',
       replayed: false,
-    } as any)
+    } as Awaited<ReturnType<typeof createInventoryTransfer>>)
   })
 
   it('shows a success alert after posting a transfer', async () => {
@@ -125,5 +128,29 @@ describe('InventoryTransferCreatePage', () => {
         'Insufficient stock is available at the source location. Reduce the quantity or replenish stock before posting the transfer.',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('uses stock transfer copy and opens with work-order shortage prefill', async () => {
+    renderPage(
+      '/inventory-transfers/new?itemId=item-1&fromLocationId=loc-1&toLocationId=loc-2&quantity=10&uom=each&referenceType=work_order&referenceId=WO-000017',
+    )
+
+    expect(await screen.findByText('New stock transfer')).toBeInTheDocument()
+    expect(
+      screen.getByText('Move stock between locations without changing total quantity.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Transfer preview')).toBeInTheDocument()
+    expect(screen.getByText('Net item change: 0 each')).toBeInTheDocument()
+
+    const values = JSON.parse(screen.getByTestId('transfer-form-values').textContent ?? '{}')
+    expect(values).toMatchObject({
+      itemId: 'item-1',
+      sourceLocationId: 'loc-1',
+      destinationLocationId: 'loc-2',
+      quantity: '10',
+      uom: 'each',
+      referenceType: 'work_order',
+      referenceId: 'WO-000017',
+    })
   })
 })
