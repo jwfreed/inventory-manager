@@ -167,6 +167,7 @@ export function InventoryTransferCreatePage() {
           itemOptions={itemOptions}
           locationOptions={locationOptions}
           isSubmitting={transferMutation.isPending}
+          isDisabled={transferMutation.isSuccess}
           onChange={(field, nextValue) =>
             setFormValues((current) => ({
               ...current,

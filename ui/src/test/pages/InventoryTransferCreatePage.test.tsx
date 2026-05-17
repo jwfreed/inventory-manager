@@ -19,14 +19,16 @@ vi.mock('@features/inventory/components/InventoryTransferForm', () => ({
     value,
     onChange,
     onSubmit,
+    isDisabled,
   }: {
     value: Record<string, string>
     onChange: (field: string, value: string) => void
     onSubmit: () => void
+    isDisabled?: boolean
   }) => (
     <div>
       <div data-testid="transfer-form-values">{JSON.stringify(value)}</div>
-      <button type="button" onClick={() => onSubmit()}>
+      <button type="button" onClick={() => onSubmit()} disabled={!!isDisabled}>
         __submit_transfer__
       </button>
       <button
@@ -152,6 +154,32 @@ describe('InventoryTransferCreatePage', () => {
       referenceType: 'work_order',
       referenceId: 'WO-000017',
     })
+  })
+
+  it('disables the form submit after a successful transfer', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '__set_valid_transfer__' }))
+    fireEvent.click(screen.getByRole('button', { name: '__submit_transfer__' }))
+
+    expect(await screen.findByText('Transfer posted')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '__submit_transfer__' })).toBeDisabled()
+    expect(mockedCreateInventoryTransfer).toHaveBeenCalledTimes(1)
+  })
+
+  it('re-enables the form after clicking New transfer', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '__set_valid_transfer__' }))
+    fireEvent.click(screen.getByRole('button', { name: '__submit_transfer__' }))
+
+    expect(await screen.findByText('Transfer posted')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '__submit_transfer__' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'New transfer' }))
+
+    expect(screen.getByRole('button', { name: '__submit_transfer__' })).not.toBeDisabled()
+    expect(screen.queryByText('Transfer posted')).not.toBeInTheDocument()
   })
 
   it('commits item stocking UOM to form and payload when UOM is absent from URL params', async () => {
