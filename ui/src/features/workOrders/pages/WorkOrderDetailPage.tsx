@@ -511,6 +511,16 @@ export default function WorkOrderDetailPage() {
     }
     return 'Choose next work order'
   }, [remaining, nextStepAvailable, nextStepBomsQuery.data, itemLabel])
+
+  const nextStepCreateButtonLabel = useMemo(() => {
+    const options = nextStepBomsQuery.data?.data ?? []
+    if (options.length === 1) {
+      const outputName = itemLabel(options[0].outputItemId)
+      const displayName = outputName ? outputName.split(' — ')[0] : ''
+      return displayName ? `Create WO: ${displayName}` : 'Create WO'
+    }
+    return 'Create selected work order'
+  }, [nextStepBomsQuery.data, itemLabel])
   const locationsById = useMemo(() => {
     const map = new Map<string, { code?: string; name?: string }>()
     locationsQuery.data?.data?.forEach((loc) => {
@@ -671,6 +681,18 @@ export default function WorkOrderDetailPage() {
                 <span className="text-sm text-slate-500">Remaining</span>
                 <span className="text-sm font-medium text-slate-900">{formatNumber(remaining)} {uom}</span>
               </div>
+              {nextStepAvailable ? (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => {
+                    setShowNextStep(true)
+                    scrollToExecutionWorkspace()
+                  }}
+                >
+                  {nextStepCtaLabel}
+                </Button>
+              ) : null}
               <Button
                 variant="secondary"
                 size="sm"
@@ -722,7 +744,7 @@ export default function WorkOrderDetailPage() {
         ],
       },
     ]
-  }, [workOrderQuery.data, actionPolicy.executionLocked, remaining, usedBomVersion, activeVersionLabel, defaultConsumeLocationLabel, itemLabel, navigate, scrollToExecutionWorkspace, formatNumber])
+  }, [workOrderQuery.data, actionPolicy.executionLocked, remaining, usedBomVersion, activeVersionLabel, defaultConsumeLocationLabel, itemLabel, navigate, scrollToExecutionWorkspace, formatNumber, nextStepAvailable, nextStepCtaLabel, setShowNextStep])
 
   const sectionLinks = isDisassembly
     ? workOrderDetailSections.filter((section) => section.id !== 'requirements')
@@ -823,6 +845,45 @@ export default function WorkOrderDetailPage() {
 
         {workOrderQuery.data ? (
           <section id="execution" className="space-y-6">
+            {actionPolicy.executionLocked && executionQuery.data &&
+              (executionQuery.data.completedTotals.length > 0 || executionQuery.data.issuedTotals.length > 0) ? (
+              <Panel title="Inventory impact" description="What was produced and consumed during this work order.">
+                <div className="space-y-4">
+                  {executionQuery.data.completedTotals.length > 0 ? (
+                    <div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Produced</div>
+                      <ul className="space-y-1 text-sm">
+                        {executionQuery.data.completedTotals.map((row) => (
+                          <li
+                            key={`${row.outputItemId}-${row.uom}`}
+                            className="flex items-center justify-between rounded-lg border border-slate-100 bg-green-50/40 px-3 py-2"
+                          >
+                            <span className="text-slate-700">{row.outputItemName ?? row.outputItemSku ?? 'Unknown item'}</span>
+                            <span className="font-semibold text-green-700">+{formatNumber(row.quantityCompleted)} {row.uom}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {executionQuery.data.issuedTotals.length > 0 ? (
+                    <div>
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Consumed</div>
+                      <ul className="space-y-1 text-sm">
+                        {executionQuery.data.issuedTotals.map((row) => (
+                          <li
+                            key={`${row.componentItemId}-${row.uom}`}
+                            className="flex items-center justify-between rounded-lg border border-slate-100 bg-red-50/40 px-3 py-2"
+                          >
+                            <span className="text-slate-700">{row.componentItemName ?? row.componentItemSku ?? 'Unknown item'}</span>
+                            <span className="font-semibold text-red-600">-{formatNumber(row.quantityIssued)} {row.uom}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </Panel>
+            ) : null}
             <Panel
               title="Operator notes"
               description="Shift notes only. This does not edit BOM, routing, quantities, or execution-derived history."
@@ -978,7 +1039,7 @@ export default function WorkOrderDetailPage() {
 
         {!isDisassembly ? (
           <section id="requirements">
-            <Panel title="Requirements vs issued" description="Compare BOM requirements to issued quantities for each component.">
+            <Panel title="Requirements vs issued" description={actionPolicy.executionLocked ? "Audit record: BOM requirements compared to issued quantities. Production is complete." : "Compare BOM requirements to issued quantities for each component."}>
               {requirementsQuery.isLoading ? <LoadingSpinner label="Loading requirements..." /> : null}
               {requirementsQuery.isError ? (
                 <ErrorState
@@ -1119,11 +1180,11 @@ export default function WorkOrderDetailPage() {
                         <div className="mt-1">Notes: {recentProductionReport.notes}</div>
                       ) : null}
                     </div>
-                  ) : (
+                  ) : !actionPolicy.executionLocked ? (
                     <div className="mt-3 text-sm text-slate-600">
                       Post production from this page to enable the recent-report void action.
                     </div>
-                  )}
+                  ) : null}
                   {!actionPolicy.canVoidRecentReport && actionPolicy.voidRecentReportDisabledReason ? (
                     <div className="mt-3 text-xs text-slate-500">
                       {actionPolicy.voidRecentReportDisabledReason}
@@ -1146,6 +1207,7 @@ export default function WorkOrderDetailPage() {
                   error={nextStepBomsQuery.error as ApiError}
                   createWarning={createWarning}
                   consumeLocationHint={consumeLocationHint}
+                  createButtonLabel={nextStepCreateButtonLabel}
                   onBomChange={setSelectedBomId}
                   onQuantityChange={setNextQuantity}
                   onCreate={createNextStep}
@@ -1168,6 +1230,27 @@ export default function WorkOrderDetailPage() {
 	              )}
 	            </div>
 	          )}
+
+          {!isDisassembly && workOrderQuery.data && actionPolicy.executionLocked && nextStepAvailable && (
+            <div className="mt-4">
+              <WorkOrderNextStepPanel
+                isOpen={true}
+                selectedBomId={selectedBomId}
+                nextQuantity={nextQuantity}
+                nextBomOptions={nextBomOptions}
+                isLoading={nextStepBomsQuery.isLoading}
+                isError={nextStepBomsQuery.isError}
+                error={nextStepBomsQuery.error as ApiError}
+                createWarning={createWarning}
+                consumeLocationHint={consumeLocationHint}
+                createButtonLabel={nextStepCreateButtonLabel}
+                onBomChange={setSelectedBomId}
+                onQuantityChange={setNextQuantity}
+                onCreate={createNextStep}
+                onCancel={() => setShowNextStep(false)}
+              />
+            </div>
+          )}
 	          </Panel>
 	        </section>
       </EntityPageLayout>
@@ -1185,13 +1268,25 @@ export default function WorkOrderDetailPage() {
             </div>
           </div>
           {actionPolicy.executionLocked ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)}
-            >
-              View movements
-            </Button>
+            nextStepAvailable ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowNextStep(true)
+                  scrollToExecutionWorkspace()
+                }}
+              >
+                {nextStepCtaLabel}
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => navigate(`/movements?externalRef=${encodeURIComponent(workOrderQuery.data!.id)}`)}
+              >
+                View movements
+              </Button>
+            )
           ) : (
             <Button size="sm" onClick={scrollToExecutionWorkspace}>
               Go to workspace

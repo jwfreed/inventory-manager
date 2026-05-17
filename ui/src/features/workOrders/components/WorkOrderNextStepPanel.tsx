@@ -12,6 +12,7 @@ type Props = {
   error?: ApiError | null
   createWarning: string | null
   consumeLocationHint: string
+  createButtonLabel: string
   onBomChange: (value: string) => void
   onQuantityChange: (value: number | '') => void
   onCreate: () => void
@@ -28,6 +29,7 @@ export function WorkOrderNextStepPanel({
   error,
   createWarning,
   consumeLocationHint,
+  createButtonLabel,
   onBomChange,
   onQuantityChange,
   onCreate,
@@ -75,7 +77,7 @@ export function WorkOrderNextStepPanel({
         {createWarning ? <Banner severity="action" title="Creation blocked" description={createWarning} /> : null}
         <div className="flex gap-2">
           <Button size="sm" onClick={onCreate} disabled={isLoading}>
-            Create next-step WO
+            {createButtonLabel}
           </Button>
           <Button variant="secondary" size="sm" onClick={onCancel}>
             Cancel

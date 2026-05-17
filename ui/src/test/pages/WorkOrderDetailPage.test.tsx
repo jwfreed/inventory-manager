@@ -721,4 +721,279 @@ describe('WorkOrderDetailPage tabs', () => {
 
     expect(screen.queryByText('Configuration health')).not.toBeInTheDocument()
   })
+
+  it('shows downstream CTA in context rail for completed WO with one downstream BOM', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseItemsList.mockReturnValue({
+      data: { data: [{ id: 'item-2', name: 'Milk Chocolate Bar 75g', sku: 'MCB-75' }] },
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: { data: [{ id: 'bom-2', bomCode: 'BOM-BAR', outputItemId: 'item-2', defaultUom: 'units' }] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    // Context rail and mobile sticky bar both show the contextual downstream CTA
+    const ctaButtons = screen.getAllByRole('button', { name: 'Create WO: Milk Chocolate Bar 75g' })
+    expect(ctaButtons.length).toBeGreaterThan(0)
+    // View movements is also present as secondary action
+    expect(screen.getAllByRole('button', { name: 'View movements' }).length).toBeGreaterThan(0)
+    // Next step panel is rendered for the locked WO
+    expect(screen.getByText('__next_step_panel__')).toBeInTheDocument()
+  })
+
+  it('shows "Choose next work order" in context rail for completed WO with multiple downstream BOMs', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseItemsList.mockReturnValue({
+      data: {
+        data: [
+          { id: 'item-2', name: 'Bar A', sku: 'BAR-A' },
+          { id: 'item-3', name: 'Bar B', sku: 'BAR-B' },
+        ],
+      },
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: {
+        data: [
+          { id: 'bom-2', bomCode: 'BOM-A', outputItemId: 'item-2', defaultUom: 'units' },
+          { id: 'bom-3', bomCode: 'BOM-B', outputItemId: 'item-3', defaultUom: 'units' },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    const ctaButtons = screen.getAllByRole('button', { name: 'Choose next work order' })
+    expect(ctaButtons.length).toBeGreaterThan(0)
+    expect(screen.getByText('__next_step_panel__')).toBeInTheDocument()
+  })
+
+  it('shows View movements and no downstream CTA for completed WO with no downstream BOM', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: { data: [] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.getAllByRole('button', { name: 'View movements' }).length).toBeGreaterThan(0)
+    // No downstream panel for locked WO without BOMs
+    expect(screen.queryByText('__next_step_panel__')).not.toBeInTheDocument()
+    // No Create WO button variants
+    expect(screen.queryByRole('button', { name: /^Create WO:/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Choose next work order' })).not.toBeInTheDocument()
+  })
+
+  it('does not render "Create next-step WO" anywhere for an active WO with a single downstream BOM', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseItemsList.mockReturnValue({
+      data: { data: [{ id: 'item-2', name: 'Milk Chocolate Bar 75g', sku: 'MCB-75' }] },
+    } as any)
+    mockedUseNextStepBoms.mockReturnValue({
+      data: { data: [{ id: 'bom-2', bomCode: 'BOM-BAR', outputItemId: 'item-2', defaultUom: 'units' }] },
+      isLoading: false,
+      isError: false,
+      error: null,
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'ready', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: null,
+        },
+        issuedTotals: [{ componentItemId: 'item-c', componentItemName: 'Cacao', componentItemSku: 'CAC', uom: 'kg', quantityIssued: 5 }],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.queryByText('Create next-step WO')).not.toBeInTheDocument()
+    expect(screen.queryByText('Create next step WO')).not.toBeInTheDocument()
+  })
+
+  it('does not show "Post production from this page" for completed work orders', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.queryByText(/Post production from this page/)).not.toBeInTheDocument()
+  })
+
+  it('shows inventory impact summary for completed work orders with execution data', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 1 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 1, quantityCompleted: 1, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [
+          { componentItemId: 'item-c1', componentItemName: 'Cacao nibs', componentItemSku: 'CN-001', uom: 'g', quantityIssued: 400 },
+          { componentItemId: 'item-c2', componentItemName: 'Milk powder', componentItemSku: 'MP-001', uom: 'g', quantityIssued: 200 },
+        ],
+        completedTotals: [
+          { outputItemId: 'item-1', outputItemName: 'Milk Chocolate Base', outputItemSku: 'MCB-001', uom: 'kg', quantityCompleted: 1 },
+        ],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.getByText('Inventory impact')).toBeInTheDocument()
+    expect(screen.getByText('Milk Chocolate Base')).toBeInTheDocument()
+    expect(screen.getByText('Cacao nibs')).toBeInTheDocument()
+    expect(screen.getByText('Milk powder')).toBeInTheDocument()
+  })
+
+  it('completed WO does not render editable WorkOrderExecutionWorkspace', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.queryByText('__execution_workspace__')).not.toBeInTheDocument()
+  })
 })
