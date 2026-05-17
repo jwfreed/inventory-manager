@@ -153,4 +153,12 @@ describe('InventoryTransferCreatePage', () => {
       referenceId: 'WO-000017',
     })
   })
+
+  it('links back to the inventory operations landing page', async () => {
+    renderPage()
+
+    const backLink = await screen.findByRole('link', { name: 'Back to operations' })
+    expect(backLink).toHaveAttribute('href', '/inventory/operations')
+    expect(screen.queryByRole('link', { name: 'Inventory counts' })).not.toBeInTheDocument()
+  })
 })

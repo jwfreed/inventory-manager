@@ -127,33 +127,30 @@ export async function getWorkOrderReadiness(tenantId: string, workOrderId: strin
   }
 
   const availableElsewhereByLine = await loadAvailableElsewhereByLine(tenantId, reservationSnapshot);
-  const readinessLines = reservationSnapshot.map((line, index) => {
-    const availableShortage = roundQuantity(Math.max(0, line.requiredQty - line.availableQty));
-    return {
-      lineNumber: index + 1,
-      componentItemId: line.componentItemId,
-      componentItemSku: line.componentItemSku,
-      componentItemName: line.componentItemName,
-      uom: line.uom,
-      quantityRequired: line.requiredQty,
-      usesPackSize: false,
-      variableUom: null,
-      scrapFactor: null,
-      consumeLocationId: line.locationId,
-      consumeLocationCode: line.locationCode,
-      consumeLocationName: line.locationName,
-      consumeLocationRole: line.locationRole,
-      required: line.requiredQty,
-      reserved: line.openReservedQty,
-      available: line.availableQty,
-      shortage: availableShortage,
-      blocked: availableShortage > 0,
-      availableElsewhere: availableElsewhereByLine.get(`${line.componentItemId}:${line.locationId}:${line.uom}`) ?? [],
-      reservationId: line.reservationId,
-      reservationStatus: line.reservationStatus,
-      fulfilled: line.fulfilledQty
-    };
-  });
+  const readinessLines = reservationSnapshot.map((line, index) => ({
+    lineNumber: index + 1,
+    componentItemId: line.componentItemId,
+    componentItemSku: line.componentItemSku,
+    componentItemName: line.componentItemName,
+    uom: line.uom,
+    quantityRequired: line.requiredQty,
+    usesPackSize: false,
+    variableUom: null,
+    scrapFactor: null,
+    consumeLocationId: line.locationId,
+    consumeLocationCode: line.locationCode,
+    consumeLocationName: line.locationName,
+    consumeLocationRole: line.locationRole,
+    required: line.requiredQty,
+    reserved: line.openReservedQty,
+    available: line.availableQty,
+    shortage: line.shortageQty,
+    blocked: line.shortageQty > 0,
+    availableElsewhere: availableElsewhereByLine.get(`${line.componentItemId}:${line.locationId}:${line.uom}`) ?? [],
+    reservationId: line.reservationId,
+    reservationStatus: line.reservationStatus,
+    fulfilled: line.fulfilledQty
+  }));
 
   return {
     workOrderId,

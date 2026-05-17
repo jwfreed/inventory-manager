@@ -21,6 +21,9 @@ const {
 const {
   getWorkOrderReadiness
 } = require('../../src/services/workOrderReadiness.service.ts');
+const {
+  syncWorkOrderReservations
+} = require('../../src/services/inventoryReservation.service.ts');
 
 async function createTransferFixture(label) {
   const harness = await createServiceHarness({
@@ -251,11 +254,73 @@ test('work order readiness exposes same-uom stock elsewhere and clears location 
     notes: `Move material for work order ${workOrder.number}`,
     idempotencyKey: `wo-readiness-transfer-${randomUUID()}`
   });
+  await syncWorkOrderReservations(harness.tenantId, workOrder.id);
 
   const after = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
   assert.equal(after.hasShortage, false);
   assert.equal(after.lines[0].available, 10);
   assert.equal(after.lines[0].shortage, 0);
+});
+
+test('work order readiness shortage follows reservation coverage, not availability context', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'transfer-readiness-shortage',
+    tenantName: 'Transfer Readiness Shortage Semantics'
+  });
+  const requiredStore = harness.topology.defaults.SELLABLE;
+  const component = await harness.createItem({
+    defaultLocationId: requiredStore.id,
+    skuPrefix: 'PART',
+    type: 'raw'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: requiredStore.id,
+    skuPrefix: 'FG',
+    type: 'finished'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    suffix: 'PARTIAL-RES',
+    components: [{ componentItemId: component.id, quantityPer: 1, uom: 'each' }],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: output.id,
+    outputUom: 'each',
+    quantityPlanned: 10,
+    defaultConsumeLocationId: requiredStore.id,
+    defaultProduceLocationId: requiredStore.id
+  });
+
+  await harness.seedStockViaCount({
+    warehouseId: harness.topology.warehouse.id,
+    itemId: component.id,
+    locationId: requiredStore.id,
+    quantity: 6,
+    unitCost: 1
+  });
+  await syncWorkOrderReservations(harness.tenantId, workOrder.id);
+  await harness.seedStockViaCount({
+    warehouseId: harness.topology.warehouse.id,
+    itemId: component.id,
+    locationId: requiredStore.id,
+    quantity: 10,
+    unitCost: 1
+  });
+
+  const readiness = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+
+  assert.equal(readiness.hasShortage, true);
+  assert.equal(readiness.lines[0].required, 10);
+  assert.equal(readiness.lines[0].reserved, 6);
+  assert.equal(readiness.lines[0].available, 10);
+  assert.equal(readiness.lines[0].shortage, 4);
+  assert.equal(readiness.lines[0].blocked, true);
 });
 
 test('transfer policy rejects same-location transfers', async () => {

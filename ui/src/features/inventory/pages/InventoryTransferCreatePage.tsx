@@ -142,9 +142,9 @@ export function InventoryTransferCreatePage() {
         title="New stock transfer"
         subtitle="Move stock between locations without changing total quantity."
         action={
-          <Link to="/inventory-counts">
+          <Link to="/inventory/operations">
             <Button variant="secondary" size="sm">
-              Inventory counts
+              Back to operations
             </Button>
           </Link>
         }
