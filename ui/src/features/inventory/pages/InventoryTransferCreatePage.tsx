@@ -67,6 +67,8 @@ export function InventoryTransferCreatePage() {
     [formValues.itemId, itemsQuery.data],
   )
 
+  const resolvedUom = formValues.uom || selectedItem?.stockingUom || selectedItem?.defaultUom || ''
+
   const transferMutation = useMutation({
     mutationFn: () =>
       createInventoryTransfer({
@@ -74,7 +76,7 @@ export function InventoryTransferCreatePage() {
         sourceLocationId: formValues.sourceLocationId,
         destinationLocationId: formValues.destinationLocationId,
         quantity: Number(formValues.quantity),
-        uom: formValues.uom,
+        uom: resolvedUom,
         occurredAt: formValues.occurredAt ? new Date(formValues.occurredAt).toISOString() : undefined,
         reasonCode: formValues.reasonCode.trim() || undefined,
         referenceType: formValues.referenceType || undefined,
@@ -114,7 +116,7 @@ export function InventoryTransferCreatePage() {
     if (!(Number(formValues.quantity) > 0)) {
       errors.push('Transfer quantity must be greater than zero.')
     }
-    if (!formValues.uom.trim()) {
+    if (!resolvedUom.trim()) {
       errors.push('Enter a unit of measure before posting the transfer.')
     }
     return errors
@@ -131,7 +133,7 @@ export function InventoryTransferCreatePage() {
   const transferQuantity = Number(formValues.quantity)
   const showPreview = Boolean(formValues.itemId || formValues.sourceLocationId || formValues.destinationLocationId || formValues.quantity || formValues.uom)
   const previewQuantity = Number.isFinite(transferQuantity) && transferQuantity > 0 ? transferQuantity : 0
-  const previewUom = formValues.uom.trim() || selectedItem?.stockingUom || selectedItem?.defaultUom || 'units'
+  const previewUom = resolvedUom || 'units'
   const previewItemLabel = selectedItem?.sku ? `${selectedItem.sku} - ${selectedItem.name}` : selectedItem?.name || 'Selected item'
   const previewSourceLabel = selectedSourceLocation?.label ?? 'Source location'
   const previewDestinationLabel = selectedDestinationLocation?.label ?? 'Destination location'
@@ -161,10 +163,7 @@ export function InventoryTransferCreatePage() {
         }}
       >
         <InventoryTransferForm
-          value={{
-            ...formValues,
-            uom: formValues.uom || selectedItem?.stockingUom || selectedItem?.defaultUom || '',
-          }}
+          value={{ ...formValues, uom: resolvedUom }}
           itemOptions={itemOptions}
           locationOptions={locationOptions}
           isSubmitting={transferMutation.isPending}

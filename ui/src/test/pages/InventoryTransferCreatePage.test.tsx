@@ -154,6 +154,42 @@ describe('InventoryTransferCreatePage', () => {
     })
   })
 
+  it('commits item stocking UOM to form and payload when UOM is absent from URL params', async () => {
+    mockedUseItemsList.mockReturnValue({
+      data: {
+        data: [{ id: 'item-1', name: 'Foil Wrapper', sku: 'WRAP-001', stockingUom: 'each' }],
+      },
+    } as unknown as ReturnType<typeof useItemsList>)
+
+    renderPage('/inventory-transfers/new?itemId=item-1&fromLocationId=loc-1&toLocationId=loc-2&quantity=10')
+
+    const values = JSON.parse((await screen.findByTestId('transfer-form-values')).textContent ?? '{}')
+    expect(values.uom).toBe('each')
+
+    fireEvent.click(screen.getByRole('button', { name: '__submit_transfer__' }))
+
+    expect(screen.queryByText('Enter a unit of measure before posting the transfer.')).not.toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(mockedCreateInventoryTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({ uom: 'each' }),
+      )
+    })
+  })
+
+  it('uses manually entered UOM in payload when user changes UOM', async () => {
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '__set_valid_transfer__' }))
+    fireEvent.click(screen.getByRole('button', { name: '__submit_transfer__' }))
+
+    await waitFor(() => {
+      expect(mockedCreateInventoryTransfer).toHaveBeenCalledWith(
+        expect.objectContaining({ uom: 'ea' }),
+      )
+    })
+  })
+
   it('links back to the inventory operations landing page', async () => {
     renderPage()
 
