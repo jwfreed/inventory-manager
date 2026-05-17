@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, within } from '@testing-library/react'
 import { RouterProvider, createMemoryRouter } from 'react-router-dom'
 import WorkOrderDetailPage from '@features/workOrders/pages/WorkOrderDetailPage'
 import { renderWithQueryClient } from '../testUtils'
@@ -26,7 +26,12 @@ vi.mock('@features/workOrders/components/WorkOrderRequirementsTable', () => ({
   WorkOrderRequirementsTable: () => <div>__requirements_table__</div>,
 }))
 vi.mock('@features/workOrders/components/WorkOrderNextStepPanel', () => ({
-  WorkOrderNextStepPanel: () => <div>__next_step_panel__</div>,
+  WorkOrderNextStepPanel: ({ onCancel }: { onCancel: () => void }) => (
+    <div>
+      __next_step_panel__
+      <button type="button" onClick={onCancel}>Cancel</button>
+    </div>
+  ),
 }))
 
 vi.mock('@features/items/queries', () => ({
@@ -763,8 +768,15 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(ctaButtons.length).toBeGreaterThan(0)
     // View movements is also present as secondary action
     expect(screen.getAllByRole('button', { name: 'View movements' }).length).toBeGreaterThan(0)
-    // Next step panel is rendered for the locked WO
-    expect(screen.getByText('__next_step_panel__')).toBeInTheDocument()
+    // Panel is closed initially — not rendered until CTA is clicked
+    expect(screen.queryByText('__next_step_panel__')).not.toBeInTheDocument()
+    // Clicking the CTA opens the panel
+    fireEvent.click(ctaButtons[0])
+    const panel = screen.getByText('__next_step_panel__').parentElement!
+    expect(panel).toBeInTheDocument()
+    // Clicking Cancel closes the panel
+    fireEvent.click(within(panel).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('__next_step_panel__')).not.toBeInTheDocument()
   })
 
   it('shows "Choose next work order" in context rail for completed WO with multiple downstream BOMs', async () => {
@@ -815,7 +827,15 @@ describe('WorkOrderDetailPage tabs', () => {
 
     const ctaButtons = screen.getAllByRole('button', { name: 'Choose next work order' })
     expect(ctaButtons.length).toBeGreaterThan(0)
-    expect(screen.getByText('__next_step_panel__')).toBeInTheDocument()
+    // Panel is closed initially — not rendered until CTA is clicked
+    expect(screen.queryByText('__next_step_panel__')).not.toBeInTheDocument()
+    // Clicking the CTA opens the panel
+    fireEvent.click(ctaButtons[0])
+    const panel = screen.getByText('__next_step_panel__').parentElement!
+    expect(panel).toBeInTheDocument()
+    // Clicking Cancel closes the panel
+    fireEvent.click(within(panel).getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText('__next_step_panel__')).not.toBeInTheDocument()
   })
 
   it('shows View movements and no downstream CTA for completed WO with no downstream BOM', async () => {

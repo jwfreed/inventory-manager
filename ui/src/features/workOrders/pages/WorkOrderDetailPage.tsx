@@ -576,10 +576,6 @@ export default function WorkOrderDetailPage() {
     return () => clearTimeout(timeout)
   }, [summaryFlash])
 
-  if (workOrderQuery.isError && workOrderQuery.error?.status === 404) {
-    return <ErrorState error={workOrderQuery.error} />
-  }
-
   const healthContent = workOrderQuery.data ? (
     <div className="space-y-3">
       {isDisassembly && totalAvailable <= 0 ? (
@@ -749,6 +745,10 @@ export default function WorkOrderDetailPage() {
   const sectionLinks = isDisassembly
     ? workOrderDetailSections.filter((section) => section.id !== 'requirements')
     : workOrderDetailSections
+
+  if (workOrderQuery.isError && workOrderQuery.error?.status === 404) {
+    return <ErrorState error={workOrderQuery.error} />
+  }
 
   return (
     <>
@@ -1231,7 +1231,7 @@ export default function WorkOrderDetailPage() {
 	            </div>
 	          )}
 
-          {!isDisassembly && workOrderQuery.data && actionPolicy.executionLocked && nextStepAvailable && (
+          {!isDisassembly && workOrderQuery.data && actionPolicy.executionLocked && nextStepAvailable && showNextStep && (
             <div className="mt-4">
               <WorkOrderNextStepPanel
                 isOpen={true}
