@@ -27,6 +27,20 @@ async function withTx(fn) {
   }
 }
 
+async function assertRejectsInSavepoint(client, action, predicate) {
+  await client.query('SAVEPOINT expected_error');
+  try {
+    await action();
+  } catch (error) {
+    await client.query('ROLLBACK TO SAVEPOINT expected_error');
+    await client.query('RELEASE SAVEPOINT expected_error');
+    assert.ok(predicate(error), `unexpected error: ${error?.message ?? error}`);
+    return;
+  }
+  await client.query('RELEASE SAVEPOINT expected_error');
+  assert.fail('Expected action to reject');
+}
+
 async function insertTenant(client, label) {
   const tenantId = randomUUID();
   await client.query(
@@ -53,6 +67,14 @@ async function insertWarehouse(client, tenantId) {
 }
 
 async function insertSellableBin(client, tenantId, warehouseId) {
+  return insertLocationBin(client, tenantId, warehouseId, {
+    role: 'SELLABLE',
+    isSellable: true,
+    prefix: 'BIN'
+  });
+}
+
+async function insertLocationBin(client, tenantId, warehouseId, { role, isSellable, prefix }) {
   const locationId = randomUUID();
   await client.query(
     `INSERT INTO locations (
@@ -60,9 +82,17 @@ async function insertSellableBin(client, tenantId, warehouseId) {
         role, is_sellable, parent_location_id, warehouse_id
       ) VALUES (
         $1, $2, $3, $4, 'bin', true, now(), now(),
-        'SELLABLE', true, $5, $5
+        $5, $6, $7, $7
       )`,
-    [locationId, tenantId, `BIN-${randomUUID().slice(0, 8)}`, `Sellable ${locationId.slice(0, 8)}`, warehouseId]
+    [
+      locationId,
+      tenantId,
+      `${prefix}-${randomUUID().slice(0, 8)}`,
+      `${role} ${locationId.slice(0, 8)}`,
+      role,
+      isSellable,
+      warehouseId
+    ]
   );
   return locationId;
 }
@@ -294,5 +324,81 @@ test('non-work-order reservations retain explicit allocation semantics', async (
     );
     assert.equal(allocated.rows[0]?.status, 'ALLOCATED');
     assert.equal(Number(allocated.rows[0]?.quantity_fulfilled ?? 0), 0);
+  });
+});
+
+test('work-order reservations may target manufacturing locations but sales reservations may not', async () => {
+  await withTx(async (client) => {
+    const { tenantId, warehouseId, locationId, itemId } = await createFixture(client, 'mfg-locations');
+    const wipLocationId = await insertLocationBin(client, tenantId, warehouseId, {
+      role: 'WIP',
+      isSellable: false,
+      prefix: 'WIP'
+    });
+    const qaLocationId = await insertLocationBin(client, tenantId, warehouseId, {
+      role: 'QA',
+      isSellable: false,
+      prefix: 'QA'
+    });
+
+    await insertReservation(client, {
+      tenantId,
+      reservationId: randomUUID(),
+      demandType: 'work_order_component',
+      demandId: randomUUID(),
+      itemId,
+      locationId: wipLocationId,
+      warehouseId,
+      status: 'RESERVED',
+      quantityReserved: 10,
+      quantityFulfilled: 0
+    });
+
+    await assertRejectsInSavepoint(
+      client,
+      () => insertReservation(client, {
+        tenantId,
+        reservationId: randomUUID(),
+        demandType: 'sales_order_line',
+        demandId: randomUUID(),
+        itemId,
+        locationId: wipLocationId,
+        warehouseId,
+        status: 'RESERVED',
+        quantityReserved: 10,
+        quantityFulfilled: 0
+      }),
+      (error) => String(error?.message ?? '').includes('RESERVATION_LOCATION_NOT_SELLABLE')
+    );
+
+    await assertRejectsInSavepoint(
+      client,
+      () => insertReservation(client, {
+        tenantId,
+        reservationId: randomUUID(),
+        demandType: 'work_order_component',
+        demandId: randomUUID(),
+        itemId,
+        locationId: qaLocationId,
+        warehouseId,
+        status: 'RESERVED',
+        quantityReserved: 10,
+        quantityFulfilled: 0
+      }),
+      (error) => String(error?.message ?? '').includes('RESERVATION_LOCATION_NOT_RESERVABLE')
+    );
+
+    await insertReservation(client, {
+      tenantId,
+      reservationId: randomUUID(),
+      demandType: 'sales_order_line',
+      demandId: randomUUID(),
+      itemId,
+      locationId,
+      warehouseId,
+      status: 'RESERVED',
+      quantityReserved: 10,
+      quantityFulfilled: 0
+    });
   });
 });

@@ -709,17 +709,19 @@ export async function transitionWorkOrderStatus(
   }
   assertWorkOrderStatusTransition(current.status, nextStatus);
   if (nextStatus === 'ready') {
-    await ensureWorkOrderReservationsReady(tenantId, workOrderId);
     const now = new Date();
-    await query(
-      `UPDATE work_orders
-          SET status = 'ready',
-              released_at = COALESCE(released_at, $1),
-              updated_at = $1
-        WHERE id = $2
-          AND tenant_id = $3`,
-      [now, workOrderId, tenantId]
-    );
+    await withTransaction(async (client) => {
+      await ensureWorkOrderReservationsReady(tenantId, workOrderId, client);
+      await client.query(
+        `UPDATE work_orders
+            SET status = 'ready',
+                released_at = COALESCE(released_at, $1),
+                updated_at = $1
+          WHERE id = $2
+            AND tenant_id = $3`,
+        [now, workOrderId, tenantId]
+      );
+    });
     return getWorkOrderById(tenantId, workOrderId);
   }
   if (nextStatus === 'closed') {

@@ -22,6 +22,115 @@ import { getWorkOrderReadiness } from '../services/workOrderReadiness.service';
 const router = Router();
 const uuidSchema = z.string().uuid();
 
+function workOrderStatusErrorCode(error: any) {
+  if (error?.code && error.code !== 'P0001') {
+    return error.code;
+  }
+  return error?.message;
+}
+
+function workOrderStatusDomainResponse(error: any) {
+  const code = workOrderStatusErrorCode(error);
+  if (code === 'WO_RESERVATION_SHORTAGE') {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'WO_RESERVATION_SHORTAGE',
+          message: 'Work order cannot move to READY because component reservations are short.',
+          details: error?.details ?? {}
+        }
+      }
+    };
+  }
+  if (code === 'RESERVATION_LOCATION_NOT_SELLABLE' || code === 'RESERVATION_LOCATION_NOT_RESERVABLE') {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code,
+          message: 'Work order component reservation location is not valid for this workflow.',
+          details: error?.details ?? {}
+        }
+      }
+    };
+  }
+  if (
+    code === 'WO_BOM_NOT_FOUND'
+    || code === 'WO_BOM_VERSION_NOT_FOUND'
+    || code === 'WO_REQUIREMENTS_UOM_MISMATCH'
+    || code === 'WO_REQUIREMENTS_INVALID_YIELD'
+    || code === 'WO_BOM_LEGACY_UNSUPPORTED'
+    || code === 'ITEM_CANONICAL_UOM_REQUIRED'
+    || code === 'ITEM_CANONICAL_UOM_INVALID'
+    || code === 'UOM_REQUIRED'
+    || code === 'UOM_UNKNOWN'
+    || code === 'UOM_INACTIVE'
+    || code === 'UOM_DIMENSION_MISMATCH'
+    || code === 'UOM_CONVERSION_MISSING'
+    || code === 'DISCRETE_UOM_REQUIRES_INTEGER'
+    || (typeof code === 'string' && (
+      code.startsWith('UOM_CONVERSION_MISSING:')
+      || code.startsWith('UOM_DIMENSION_UNKNOWN:')
+      || code.startsWith('UOM_DIMENSION_MISMATCH:')
+    ))
+  ) {
+    return {
+      status: 422,
+      body: {
+        error: {
+          code,
+          message: 'Work order readiness could not be evaluated because component requirements are invalid.',
+          details: error?.details ?? error?.context ?? {}
+        }
+      }
+    };
+  }
+  if (
+    code === 'WO_CLOSE_DRAFT_POSTINGS_EXIST'
+    || code === 'WO_CLOSE_INCOMPLETE_PROGRESS'
+    || code === 'WO_WIP_INTEGRITY_FAILED'
+  ) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code,
+          message: 'Work order close failed integrity validation.',
+          details: error?.details ?? {}
+        }
+      }
+    };
+  }
+  if (code === 'WO_STATUS_TRANSITION_INVALID') {
+    return { status: 409, body: { error: 'Invalid work order status transition.' } };
+  }
+  if (code === 'WO_NOT_FOUND') {
+    return { status: 404, body: { error: 'Work order not found.' } };
+  }
+  return null;
+}
+
+function logUnexpectedWorkOrderStatusError(params: {
+  tenantId: string;
+  workOrderId: string;
+  nextStatus: string;
+  error: any;
+}) {
+  console.error('WORK_ORDER_STATUS_TRANSITION_UNEXPECTED', {
+    tenantId: params.tenantId,
+    workOrderId: params.workOrderId,
+    nextStatus: params.nextStatus,
+    error: {
+      code: params.error?.code ?? null,
+      message: params.error?.message ?? null,
+      detail: params.error?.detail ?? null,
+      routine: params.error?.routine ?? null,
+      stack: params.error?.stack ?? null
+    }
+  });
+}
+
 router.post('/work-orders', async (req: Request, res: Response) => {
   const parsed = workOrderCreateSchema.safeParse(req.body);
   if (!parsed.success) {
@@ -228,38 +337,16 @@ router.post('/work-orders/:id/status/:status', async (req: Request, res: Respons
     }
     return res.json(updated);
   } catch (error: any) {
-    if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
-      return res.status(409).json({
-        error: {
-          code: 'WO_RESERVATION_SHORTAGE',
-          message: 'Work order cannot move to READY because component reservations are short.',
-          details: error?.details ?? {}
-        }
-      });
+    const mapped = workOrderStatusDomainResponse(error);
+    if (mapped) {
+      return res.status(mapped.status).json(mapped.body);
     }
-    if (
-      error?.code === 'WO_CLOSE_DRAFT_POSTINGS_EXIST'
-      || error?.message === 'WO_CLOSE_DRAFT_POSTINGS_EXIST'
-      || error?.code === 'WO_CLOSE_INCOMPLETE_PROGRESS'
-      || error?.message === 'WO_CLOSE_INCOMPLETE_PROGRESS'
-      || error?.code === 'WO_WIP_INTEGRITY_FAILED'
-      || error?.message === 'WO_WIP_INTEGRITY_FAILED'
-    ) {
-      return res.status(409).json({
-        error: {
-          code: error?.code ?? error?.message,
-          message: 'Work order close failed integrity validation.',
-          details: error?.details ?? {}
-        }
-      });
-    }
-    if (error?.code === 'WO_STATUS_TRANSITION_INVALID' || error?.message === 'WO_STATUS_TRANSITION_INVALID') {
-      return res.status(409).json({ error: 'Invalid work order status transition.' });
-    }
-    if (error?.message === 'WO_NOT_FOUND') {
-      return res.status(404).json({ error: 'Work order not found.' });
-    }
-    console.error(error);
+    logUnexpectedWorkOrderStatusError({
+      tenantId: req.auth!.tenantId,
+      workOrderId: id,
+      nextStatus: status,
+      error
+    });
     return res.status(500).json({ error: 'Failed to transition work order status.' });
   }
 });

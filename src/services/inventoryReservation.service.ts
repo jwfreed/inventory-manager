@@ -6,6 +6,7 @@ import { recordAuditLog } from '../lib/audit';
 import { convertToCanonical } from './uomCanonical.service';
 import { deriveComponentConsumeLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
 import { fetchBomById, resolveEffectiveBom } from './boms.service';
+import { buildInventoryBalanceProjectionOp } from '../modules/platform/application/inventoryMutationSupport';
 
 type WorkOrderRow = {
   id: string;
@@ -63,6 +64,12 @@ type ReservationStateRow = Pick<
   | 'cancel_reason'
   | 'allocated_at'
 >;
+
+type ReservationProjectionKey = {
+  itemId: string;
+  locationId: string;
+  uom: string;
+};
 
 export type WorkOrderReservationPlanLine = {
   componentItemId: string;
@@ -367,6 +374,166 @@ function reservationRowKey(row: ReservationRow) {
   return `${row.item_id}:${row.location_id}:${row.uom}`;
 }
 
+function reservationProjectionKey(key: ReservationProjectionKey) {
+  return `${key.itemId}:${key.locationId}:${key.uom}`;
+}
+
+function planLineProjectionKey(line: WorkOrderReservationPlanLine): ReservationProjectionKey {
+  return {
+    itemId: line.componentItemId,
+    locationId: line.locationId,
+    uom: line.uom
+  };
+}
+
+function rowProjectionKey(row: ReservationRow): ReservationProjectionKey {
+  return {
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom
+  };
+}
+
+function uniqueReservationProjectionKeys(keys: ReservationProjectionKey[]) {
+  const byKey = new Map<string, ReservationProjectionKey>();
+  for (const key of keys) {
+    byKey.set(reservationProjectionKey(key), key);
+  }
+  return [...byKey.values()].sort((left, right) =>
+    [
+      left.itemId.localeCompare(right.itemId),
+      left.locationId.localeCompare(right.locationId),
+      left.uom.localeCompare(right.uom)
+    ].find((value) => value !== 0) ?? 0
+  );
+}
+
+async function syncReservationCommitmentProjection(
+  client: PoolClient,
+  tenantId: string,
+  keys: ReservationProjectionKey[],
+  reasonCode: string,
+  eventTimestamp: Date
+) {
+  const uniqueKeys = uniqueReservationProjectionKeys(keys);
+  if (uniqueKeys.length === 0) {
+    return;
+  }
+
+  const valuesSql = uniqueKeys
+    .map((_, index) => {
+      const base = index * 3 + 2;
+      return `($${base}::uuid, $${base + 1}::uuid, $${base + 2}::text)`;
+    })
+    .join(', ');
+  const keyParams = uniqueKeys.flatMap((key) => [key.itemId, key.locationId, key.uom]);
+
+  const targetResult = await client.query<{
+    item_id: string;
+    location_id: string;
+    uom: string;
+    reserved: string | number;
+    allocated: string | number;
+  }>(
+    `WITH touched(item_id, location_id, uom) AS (
+       VALUES ${valuesSql}
+     )
+     SELECT t.item_id,
+            t.location_id,
+            t.uom,
+            COALESCE(SUM(
+              CASE
+                WHEN r.status = 'RESERVED'
+                THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                ELSE 0
+              END
+            ), 0)::numeric AS reserved,
+            COALESCE(SUM(
+              CASE
+                WHEN r.status = 'ALLOCATED'
+                THEN GREATEST(0, r.quantity_reserved - COALESCE(r.quantity_fulfilled, 0))
+                ELSE 0
+              END
+            ), 0)::numeric AS allocated
+       FROM touched t
+       LEFT JOIN inventory_reservations r
+         ON r.tenant_id = $1
+        AND r.item_id = t.item_id
+        AND r.location_id = t.location_id
+        AND r.uom = t.uom
+        AND r.status IN ('RESERVED', 'ALLOCATED')
+      GROUP BY t.item_id, t.location_id, t.uom
+      ORDER BY t.item_id ASC, t.location_id ASC, t.uom ASC`,
+    [tenantId, ...keyParams]
+  );
+
+  for (const row of targetResult.rows) {
+    const currentResult = await client.query<{
+      reserved: string | number;
+      allocated: string | number;
+    }>(
+      `SELECT reserved, allocated
+         FROM inventory_balance
+        WHERE tenant_id = $1
+          AND item_id = $2
+          AND location_id = $3
+          AND uom = $4`,
+      [tenantId, row.item_id, row.location_id, row.uom]
+    );
+    const currentReserved = roundQuantity(toNumber(currentResult.rows[0]?.reserved ?? 0));
+    const currentAllocated = roundQuantity(toNumber(currentResult.rows[0]?.allocated ?? 0));
+    const targetReserved = roundQuantity(toNumber(row.reserved));
+    const targetAllocated = roundQuantity(toNumber(row.allocated));
+    const deltaReserved = roundQuantity(targetReserved - currentReserved);
+    const deltaAllocated = roundQuantity(targetAllocated - currentAllocated);
+
+    if (deltaAllocated < -1e-6) {
+      await buildInventoryBalanceProjectionOp({
+        tenantId,
+        itemId: row.item_id,
+        locationId: row.location_id,
+        uom: row.uom,
+        deltaAllocated,
+        mutationContext: {
+          reasonCode,
+          eventTimestamp,
+          stateTransition: 'allocated->available'
+        }
+      })(client);
+    }
+
+    if (Math.abs(deltaReserved) > 1e-6) {
+      await buildInventoryBalanceProjectionOp({
+        tenantId,
+        itemId: row.item_id,
+        locationId: row.location_id,
+        uom: row.uom,
+        deltaReserved,
+        mutationContext: {
+          reasonCode,
+          eventTimestamp,
+          stateTransition: deltaReserved < 0 ? 'allocated->available' : 'available->allocated'
+        }
+      })(client);
+    }
+
+    if (deltaAllocated > 1e-6) {
+      await buildInventoryBalanceProjectionOp({
+        tenantId,
+        itemId: row.item_id,
+        locationId: row.location_id,
+        uom: row.uom,
+        deltaAllocated,
+        mutationContext: {
+          reasonCode,
+          eventTimestamp,
+          stateTransition: 'available->allocated'
+        }
+      })(client);
+    }
+  }
+}
+
 function logVoidReservationRestoreWarning(payload: Record<string, unknown>) {
   console.warn('WO_VOID_RESERVATION_RESTORE_WARNING', payload);
 }
@@ -583,6 +750,17 @@ export async function syncWorkOrderReservations(
     );
   }
 
+  await syncReservationCommitmentProjection(
+    client,
+    tenantId,
+    [
+      ...plan.lines.map(planLineProjectionKey),
+      ...existingRows.map(rowProjectionKey)
+    ],
+    'work_order_reservation_sync',
+    now
+  );
+
   return snapshot;
 }
 
@@ -781,6 +959,18 @@ export async function consumeWorkOrderReservations(
       [nextFulfilled, now, reservation.id, tenantId]
     );
   }
+
+  await syncReservationCommitmentProjection(
+    client,
+    tenantId,
+    [...normalized.values()].map((line) => ({
+      itemId: line.componentItemId,
+      locationId: line.locationId,
+      uom: line.uom
+    })),
+    'work_order_reservation_consume',
+    now
+  );
 }
 
 export async function restoreReservationsForVoid(
@@ -1039,6 +1229,7 @@ export async function releaseWorkOrderReservations(
     return withTransaction((tx) => releaseWorkOrderReservations(tenantId, workOrderId, reasonCode, tx));
   }
   const now = new Date();
+  const existingRows = await loadExistingReservations(client, tenantId, workOrderId);
   await client.query(
     `UPDATE inventory_reservations
         SET status = CASE
@@ -1067,5 +1258,14 @@ export async function releaseWorkOrderReservations(
         AND demand_id = $4
         AND status IN ('RESERVED', 'ALLOCATED')`,
     [now, reasonCode, tenantId, workOrderId]
+  );
+  await syncReservationCommitmentProjection(
+    client,
+    tenantId,
+    existingRows
+      .filter((row) => row.status === 'RESERVED' || row.status === 'ALLOCATED')
+      .map(rowProjectionKey),
+    reasonCode,
+    now
   );
 }

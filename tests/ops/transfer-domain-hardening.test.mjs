@@ -16,7 +16,8 @@ const {
   buildTransferMovementPlan
 } = require('../../src/domain/transfers/transferPlan.ts');
 const {
-  createUomConversion
+  createUomConversion,
+  createLocation
 } = require('../../src/services/masterData.service.ts');
 const {
   getWorkOrderReadiness
@@ -24,6 +25,9 @@ const {
 const {
   syncWorkOrderReservations
 } = require('../../src/services/inventoryReservation.service.ts');
+const {
+  transitionWorkOrderStatus
+} = require('../../src/services/workOrders.service.ts');
 
 async function createTransferFixture(label) {
   const harness = await createServiceHarness({
@@ -57,6 +61,192 @@ async function expectCode(action, expectedCode) {
     assert.equal(error?.code ?? error?.message, expectedCode);
     return true;
   });
+}
+
+async function createFactoryLocation(harness, role, suffix) {
+  return createLocation(harness.tenantId, {
+    code: `${role}-${suffix}-${randomUUID().slice(0, 6)}`,
+    name: `${role} ${suffix}`,
+    type: 'bin',
+    role,
+    parentLocationId: harness.topology.warehouse.id,
+    active: true
+  });
+}
+
+async function createMixedUomWorkOrderFixture(label) {
+  const harness = await createServiceHarness({
+    tenantPrefix: label,
+    tenantName: `Transfer Work Order Ready ${label}`
+  });
+  const suffix = randomUUID().slice(0, 6);
+  const rmStore = await createFactoryLocation(harness, 'RM_STORE', suffix);
+  const packStore = await createFactoryLocation(harness, 'PACKAGING', suffix);
+  const production = await createFactoryLocation(harness, 'WIP', suffix);
+  const fgStage = await createFactoryLocation(harness, 'FG_STAGE', suffix);
+  const wrapper = await harness.createItem({
+    defaultLocationId: rmStore.id,
+    skuPrefix: 'WRAP',
+    type: 'packaging'
+  });
+  const chocolateBase = await harness.createItem({
+    defaultLocationId: production.id,
+    skuPrefix: 'CHOCBASE',
+    type: 'wip',
+    defaultUom: 'kg',
+    uomDimension: 'mass',
+    canonicalUom: 'g',
+    stockingUom: 'kg'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: fgStage.id,
+    skuPrefix: 'BAR',
+    type: 'finished'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    suffix: `READY-${suffix}`,
+    components: [
+      { componentItemId: wrapper.id, quantityPer: 1, uom: 'each' },
+      { componentItemId: chocolateBase.id, quantityPer: 75, uom: 'g' }
+    ],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: output.id,
+    outputUom: 'each',
+    quantityPlanned: 10,
+    defaultConsumeLocationId: production.id,
+    defaultProduceLocationId: fgStage.id
+  });
+
+  return {
+    harness,
+    rmStore,
+    packStore,
+    production,
+    fgStage,
+    wrapper,
+    chocolateBase,
+    output,
+    bom,
+    workOrder
+  };
+}
+
+async function countTransferMovements(harness) {
+  const result = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_movements
+      WHERE tenant_id = $1
+        AND movement_type = 'transfer'`,
+    [harness.tenantId]
+  );
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+async function seedStockAtLocation(harness, {
+  itemId,
+  locationId,
+  quantity,
+  unitCost,
+  uom,
+  label
+}) {
+  const adjustment = await harness.createInventoryAdjustmentDraft(
+    {
+      occurredAt: '2026-03-01T00:00:00.000Z',
+      reasonCode: `seed_${label}`,
+      lines: [
+        {
+          lineNumber: 1,
+          itemId,
+          locationId,
+          uom,
+          quantityDelta: quantity,
+          unitCostForPositiveAdjustment: unitCost,
+          reasonCode: `seed_${label}`
+        }
+      ]
+    },
+    { type: 'system', id: null },
+    { idempotencyKey: `seed-stock-at-location-${label}-${randomUUID()}` }
+  );
+  return harness.postInventoryAdjustmentDraft(adjustment.id, { type: 'system', id: null });
+}
+
+async function seedWrapperAtRmAndTransferToPack(harness, {
+  rmStore,
+  packStore,
+  wrapper,
+  workOrder,
+  label
+}) {
+  await seedStockAtLocation(harness, {
+    itemId: wrapper.id,
+    locationId: rmStore.id,
+    quantity: 10,
+    unitCost: 1,
+    uom: 'each',
+    label: `${label}-wrapper-rm`
+  });
+  return harness.postTransfer({
+    sourceLocationId: rmStore.id,
+    destinationLocationId: packStore.id,
+    itemId: wrapper.id,
+    quantity: 10,
+    uom: 'each',
+    reasonCode: 'work_order_material_move',
+    referenceType: 'work_order',
+    referenceId: workOrder.id,
+    idempotencyKey: `${label}-${randomUUID()}`
+  });
+}
+
+async function loadMovementLineSummary(harness, movementId) {
+  const result = await harness.pool.query(
+    `SELECT COUNT(*)::int AS line_count,
+            COALESCE(SUM(quantity_delta_canonical), 0)::numeric AS canonical_delta,
+            COUNT(*) FILTER (WHERE quantity_delta_canonical < 0)::int AS outbound_count,
+            COUNT(*) FILTER (WHERE quantity_delta_canonical > 0)::int AS inbound_count
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2`,
+    [harness.tenantId, movementId]
+  );
+  const row = result.rows[0] ?? {};
+  return {
+    lineCount: Number(row.line_count ?? 0),
+    canonicalDelta: Number(row.canonical_delta ?? 0),
+    outboundCount: Number(row.outbound_count ?? 0),
+    inboundCount: Number(row.inbound_count ?? 0)
+  };
+}
+
+async function loadBalanceLine(harness, itemId, locationId, uom) {
+  const rows = await harness.snapshotInventoryBalance();
+  return rows.find((row) =>
+    row.itemId === itemId
+    && row.locationId === locationId
+    && row.uom === uom
+  ) ?? { itemId, locationId, uom, onHand: 0, reserved: 0, allocated: 0 };
+}
+
+async function countWorkOrderReservations(harness, workOrderId) {
+  const result = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM inventory_reservations
+      WHERE tenant_id = $1
+        AND demand_type = 'work_order_component'
+        AND demand_id = $2`,
+    [harness.tenantId, workOrderId]
+  );
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 function buildPolicyTx(config = {}) {
@@ -321,6 +511,159 @@ test('work order readiness shortage follows reservation coverage, not availabili
   assert.equal(readiness.lines[0].available, 10);
   assert.equal(readiness.lines[0].shortage, 4);
   assert.equal(readiness.lines[0].blocked, true);
+});
+
+test('ready work order returns a controlled shortage when required stock is in the wrong location', async () => {
+  const {
+    harness,
+    rmStore,
+    production,
+    wrapper,
+    chocolateBase,
+    workOrder
+  } = await createMixedUomWorkOrderFixture('ready-wrong-location');
+
+  await seedStockAtLocation(harness, {
+    itemId: wrapper.id,
+    locationId: rmStore.id,
+    quantity: 10,
+    unitCost: 1,
+    uom: 'each',
+    label: 'wrong-location-wrapper'
+  });
+  await seedStockAtLocation(harness, {
+    itemId: chocolateBase.id,
+    locationId: production.id,
+    quantity: 0.75,
+    unitCost: 2,
+    uom: 'kg',
+    label: 'wrong-location-chocolate'
+  });
+
+  await assert.rejects(
+    () => transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready'),
+    (error) => {
+      assert.equal(error?.code ?? error?.message, 'WO_RESERVATION_SHORTAGE');
+      assert.equal(error.details?.workOrderId, workOrder.id);
+      const shortages = error.details?.shortages ?? [];
+      assert.equal(shortages.length, 1);
+      assert.equal(shortages[0].componentItemId, wrapper.id);
+      assert.equal(shortages[0].uom, 'each');
+      assert.equal(shortages[0].required, 10);
+      assert.equal(shortages[0].reserved, 0);
+      assert.equal(shortages[0].shortage, 10);
+      return true;
+    }
+  );
+
+  assert.equal(await countWorkOrderReservations(harness, workOrder.id), 0);
+  const chocolateBalance = await loadBalanceLine(harness, chocolateBase.id, production.id, 'g');
+  assert.equal(chocolateBalance.onHand, 750);
+  assert.equal(chocolateBalance.reserved, 0);
+  assert.equal(chocolateBalance.allocated, 0);
+});
+
+test('ready work order succeeds after transfer to required consume location and preserves transfer ledger', async () => {
+  const {
+    harness,
+    rmStore,
+    packStore,
+    production,
+    wrapper,
+    chocolateBase,
+    workOrder
+  } = await createMixedUomWorkOrderFixture('ready-after-transfer');
+
+  await seedStockAtLocation(harness, {
+    itemId: chocolateBase.id,
+    locationId: production.id,
+    quantity: 0.75,
+    unitCost: 2,
+    uom: 'kg',
+    label: 'ready-transfer-chocolate'
+  });
+  const transfer = await seedWrapperAtRmAndTransferToPack(harness, {
+    rmStore,
+    packStore,
+    wrapper,
+    workOrder,
+    label: 'ready-after-transfer'
+  });
+  const transferMovementCountBeforeReady = await countTransferMovements(harness);
+  const transferSummary = await loadMovementLineSummary(harness, transfer.movementId);
+
+  const updated = await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+  const transferMovementCountAfterReady = await countTransferMovements(harness);
+  const readiness = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+
+  assert.equal(updated.status, 'ready');
+  assert.equal(readiness.hasShortage, false);
+  assert.equal(transferMovementCountAfterReady, transferMovementCountBeforeReady);
+  assert.equal(transferSummary.lineCount, 2);
+  assert.equal(transferSummary.canonicalDelta, 0);
+  assert.equal(transferSummary.outboundCount, 1);
+  assert.equal(transferSummary.inboundCount, 1);
+
+  const wrapperLine = readiness.lines.find((line) => line.componentItemId === wrapper.id);
+  const chocolateLine = readiness.lines.find((line) => line.componentItemId === chocolateBase.id);
+  const wrapperBalance = await loadBalanceLine(harness, wrapper.id, packStore.id, 'each');
+  const chocolateBalance = await loadBalanceLine(harness, chocolateBase.id, production.id, 'g');
+  assert.ok(wrapperLine);
+  assert.ok(chocolateLine);
+  assert.equal(wrapperLine.consumeLocationId, packStore.id);
+  assert.equal(wrapperLine.required, 10);
+  assert.equal(wrapperLine.reserved, 10);
+  assert.equal(wrapperLine.uom, 'each');
+  assert.equal(wrapperBalance.onHand, 10);
+  assert.equal(wrapperBalance.reserved, 10);
+  assert.equal(wrapperBalance.allocated, 0);
+  assert.equal(chocolateLine.consumeLocationId, production.id);
+  assert.equal(chocolateLine.required, 750);
+  assert.equal(chocolateLine.reserved, 750);
+  assert.equal(chocolateLine.uom, 'g');
+  assert.equal(chocolateBalance.onHand, 750);
+  assert.equal(chocolateBalance.reserved, 750);
+  assert.equal(chocolateBalance.allocated, 0);
+});
+
+test('ready work order returns controlled partial shortage after wrapper transfer when mass component is short', async () => {
+  const {
+    harness,
+    rmStore,
+    packStore,
+    wrapper,
+    chocolateBase,
+    workOrder
+  } = await createMixedUomWorkOrderFixture('ready-partial-shortage');
+
+  await seedWrapperAtRmAndTransferToPack(harness, {
+    rmStore,
+    packStore,
+    wrapper,
+    workOrder,
+    label: 'ready-partial-shortage'
+  });
+
+  await assert.rejects(
+    () => transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready'),
+    (error) => {
+      assert.equal(error?.code ?? error?.message, 'WO_RESERVATION_SHORTAGE');
+      const shortages = error.details?.shortages ?? [];
+      assert.equal(shortages.length, 1);
+      assert.equal(shortages[0].componentItemId, chocolateBase.id);
+      assert.equal(shortages[0].uom, 'g');
+      assert.equal(shortages[0].required, 750);
+      assert.equal(shortages[0].reserved, 0);
+      assert.equal(shortages[0].shortage, 750);
+      return true;
+    }
+  );
+
+  assert.equal(await countWorkOrderReservations(harness, workOrder.id), 0);
+  const wrapperBalance = await loadBalanceLine(harness, wrapper.id, packStore.id, 'each');
+  assert.equal(wrapperBalance.onHand, 10);
+  assert.equal(wrapperBalance.reserved, 0);
+  assert.equal(wrapperBalance.allocated, 0);
 });
 
 test('transfer policy rejects same-location transfers', async () => {

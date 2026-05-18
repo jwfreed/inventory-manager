@@ -189,7 +189,8 @@ const nonSellableFlowRefsCte = `
            r.warehouse_id,
            r.location_id,
            r.status AS source_status,
-           r.demand_id::text AS demand_id
+           r.demand_id::text AS demand_id,
+           r.demand_type
       FROM inventory_reservations r
      WHERE r.tenant_id = $1
        AND ($2::uuid IS NULL OR r.warehouse_id = $2::uuid)
@@ -202,7 +203,8 @@ const nonSellableFlowRefsCte = `
            so.warehouse_id,
            s.ship_from_location_id AS location_id,
            COALESCE(s.status, 'draft') AS source_status,
-           s.sales_order_id::text AS demand_id
+           s.sales_order_id::text AS demand_id,
+           'sales_order_shipment'::text AS demand_type
       FROM sales_order_shipments s
       JOIN sales_orders so
         ON so.id = s.sales_order_id
@@ -223,10 +225,15 @@ const nonSellableFlowCountSql = `
   ${nonSellableFlowRefsCte}
   SELECT COUNT(*)::int AS count
     FROM combined c
-    JOIN locations l
+   JOIN locations l
       ON l.id = c.location_id
      AND l.tenant_id = c.tenant_id
    WHERE l.is_sellable = false
+     AND NOT (
+       c.source_type = 'reservation'
+       AND c.demand_type = 'work_order_component'
+       AND l.role IN ('RM_STORE', 'WIP', 'PACKAGING', 'FG_STAGE')
+     )
 `;
 
 const nonSellableFlowRowsSql = `
@@ -237,6 +244,7 @@ const nonSellableFlowRowsSql = `
          c.demand_id,
          c.warehouse_id,
          c.location_id,
+         c.demand_type,
          l.code AS location_code,
          l.local_code AS location_local_code,
          l.role AS location_role,
@@ -246,6 +254,11 @@ const nonSellableFlowRowsSql = `
       ON l.id = c.location_id
      AND l.tenant_id = c.tenant_id
    WHERE l.is_sellable = false
+     AND NOT (
+       c.source_type = 'reservation'
+       AND c.demand_type = 'work_order_component'
+       AND l.role IN ('RM_STORE', 'WIP', 'PACKAGING', 'FG_STAGE')
+     )
    ORDER BY c.source_type, c.source_id
    LIMIT $3
 `;

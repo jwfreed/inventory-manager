@@ -574,13 +574,13 @@ export async function runInventoryInvariantCheck(
 
         const nonSellableFlowScopeInvalid = await query<{ count: string }>(
           `WITH reservation_refs AS (
-             SELECT r.tenant_id, r.location_id
+             SELECT r.tenant_id, r.location_id, r.demand_type
                FROM inventory_reservations r
               WHERE r.tenant_id = $1
                 AND r.status IN ('RESERVED','ALLOCATED','FULFILLED')
            ),
            shipment_refs AS (
-             SELECT s.tenant_id, s.ship_from_location_id AS location_id
+             SELECT s.tenant_id, s.ship_from_location_id AS location_id, 'sales_order_shipment'::text AS demand_type
                FROM sales_order_shipments s
               WHERE s.tenant_id = $1
                 AND s.ship_from_location_id IS NOT NULL
@@ -596,7 +596,11 @@ export async function runInventoryInvariantCheck(
              JOIN locations l
                ON l.id = c.location_id
               AND l.tenant_id = c.tenant_id
-            WHERE l.is_sellable = false`,
+            WHERE l.is_sellable = false
+              AND NOT (
+                c.demand_type = 'work_order_component'
+                AND l.role IN ('RM_STORE', 'WIP', 'PACKAGING', 'FG_STAGE')
+              )`,
           [tenant.id]
         );
         const nonSellableFlowScopeInvalidCount = Number(nonSellableFlowScopeInvalid.rows[0]?.count ?? 0);
