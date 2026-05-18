@@ -907,7 +907,7 @@ export async function voidWorkOrderProductionReport(
               mutationContext: {
                 reasonCode: 'work_order_void_reservation_restore',
                 eventTimestamp: now,
-                stateTransition: deltaReserved < 0 ? 'allocated->available' : 'available->allocated'
+                stateTransition: deltaReserved < 0 ? 'reserved->available' : 'available->reserved'
               }
             });
           }

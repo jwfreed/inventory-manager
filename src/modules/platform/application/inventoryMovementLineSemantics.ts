@@ -10,6 +10,7 @@ export const INVENTORY_STATES = [
   'received',
   'qc_hold',
   'available',
+  'reserved',
   'allocated',
   'picked',
   'shipped',
@@ -20,6 +21,8 @@ export const INVENTORY_STATE_TRANSITIONS = [
   'received->qc_hold',
   'received->available',
   'qc_hold->available',
+  'available->reserved',
+  'reserved->available',
   'available->allocated',
   'allocated->available',
   'allocated->picked',
@@ -86,13 +89,13 @@ export function deriveInventoryBalanceStateTransition(params: {
   const reasonCode = params.reasonCode?.trim().toLowerCase() ?? '';
 
   if (deltaReserved > 0 && deltaAllocated === 0) {
-    return assertInventoryStateTransition('available', 'allocated');
+    return assertInventoryStateTransition('available', 'reserved');
   }
   if (deltaReserved < 0 && deltaAllocated > 0) {
     return assertInventoryStateTransition('allocated', 'picked');
   }
   if (deltaReserved < 0 && deltaAllocated === 0) {
-    return assertInventoryStateTransition('allocated', 'available');
+    return assertInventoryStateTransition('reserved', 'available');
   }
   if (deltaOnHand < 0 && deltaAllocated < 0) {
     return assertInventoryStateTransition('picked', 'shipped');

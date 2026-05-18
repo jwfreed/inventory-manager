@@ -512,7 +512,7 @@ async function syncReservationCommitmentProjection(
         mutationContext: {
           reasonCode,
           eventTimestamp,
-          stateTransition: deltaReserved < 0 ? 'allocated->available' : 'available->allocated'
+          stateTransition: deltaReserved < 0 ? 'reserved->available' : 'available->reserved'
         }
       })(client);
     }
