@@ -55,6 +55,18 @@ function workOrderStatusDomainResponse(error: any) {
       }
     };
   }
+  if (code === 'WO_CONSUME_LOCATION_INVALID') {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code,
+          message: 'Work order component consumption must use a valid manufacturing consume location.',
+          details: error?.details ?? {}
+        }
+      }
+    };
+  }
   if (
     code === 'WO_BOM_NOT_FOUND'
     || code === 'WO_BOM_VERSION_NOT_FOUND'

@@ -139,6 +139,15 @@ router.post('/work-orders/:id/disassemble', async (req: Request, res: Response) 
         }
       });
     }
+    if (error?.code === 'WO_CONSUME_LOCATION_INVALID' || error?.message === 'WO_CONSUME_LOCATION_INVALID') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_CONSUME_LOCATION_INVALID',
+          message: 'Disassembly consumption must source from a valid disassembly consume location.',
+          details: error?.details ?? {}
+        }
+      });
+    }
     if (error?.message === 'WO_DISASSEMBLY_KIND_REQUIRED') {
       return res.status(400).json({ error: 'This work order is not configured for disassembly.' });
     }
@@ -666,6 +675,15 @@ router.post('/work-orders/:id/record-batch', async (req: Request, res: Response)
         }
       });
     }
+    if (error?.code === 'WO_CONSUME_LOCATION_INVALID' || error?.message === 'WO_CONSUME_LOCATION_INVALID') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_CONSUME_LOCATION_INVALID',
+          message: 'Work-order component consumption must source from a valid manufacturing consume location.',
+          details: error?.details
+        }
+      });
+    }
     if (error?.code === 'WO_RESERVATION_SHORTAGE' || error?.message === 'WO_RESERVATION_SHORTAGE') {
       return res.status(409).json({
         error: {
@@ -887,6 +905,15 @@ router.post('/work-orders/:id/report-production', async (req: Request, res: Resp
         error: {
           code: 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE',
           message: 'Manufacturing backflush consumption must source from a sellable location.',
+          details: error?.details
+        }
+      });
+    }
+    if (error?.code === 'WO_CONSUME_LOCATION_INVALID' || error?.message === 'WO_CONSUME_LOCATION_INVALID') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_CONSUME_LOCATION_INVALID',
+          message: 'Work-order component consumption must source from a valid manufacturing consume location.',
           details: error?.details
         }
       });

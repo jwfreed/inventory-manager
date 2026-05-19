@@ -139,6 +139,56 @@ async function createMixedUomWorkOrderFixture(label) {
   };
 }
 
+async function createDisassemblyPolicyFixture(label, inputRole) {
+  const harness = await createServiceHarness({
+    tenantPrefix: `disassembly-${label}`,
+    tenantName: `Disassembly Consume Policy ${label}`
+  });
+  const suffix = randomUUID().slice(0, 6);
+  const consumeLocation = inputRole === 'SELLABLE'
+    ? harness.topology.defaults.SELLABLE
+    : await createFactoryLocation(harness, inputRole, suffix);
+  const rmStore = await createFactoryLocation(harness, 'RM_STORE', suffix);
+  const assembledItem = await harness.createItem({
+    defaultLocationId: consumeLocation.id,
+    skuPrefix: 'DISASM-FG',
+    type: inputRole === 'WIP' ? 'wip' : 'finished'
+  });
+  const component = await harness.createItem({
+    defaultLocationId: rmStore.id,
+    skuPrefix: 'DISASM-RM',
+    type: 'raw'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: assembledItem.id,
+    suffix: `DISASM-${label}-${suffix}`,
+    components: [{ componentItemId: component.id, quantityPer: 2, uom: 'each' }],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'disassembly',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: assembledItem.id,
+    outputUom: 'each',
+    quantityPlanned: 2,
+    defaultConsumeLocationId: consumeLocation.id,
+    defaultProduceLocationId: rmStore.id
+  });
+
+  return {
+    harness,
+    consumeLocation,
+    rmStore,
+    assembledItem,
+    component,
+    bom,
+    workOrder
+  };
+}
+
 async function countTransferMovements(harness) {
   const result = await harness.pool.query(
     `SELECT COUNT(*)::int AS count
@@ -226,6 +276,30 @@ async function loadMovementLineSummary(harness, movementId) {
     outboundCount: Number(row.outbound_count ?? 0),
     inboundCount: Number(row.inbound_count ?? 0)
   };
+}
+
+async function loadMovementLines(harness, movementId) {
+  const result = await harness.pool.query(
+    `SELECT item_id,
+            location_id,
+            uom,
+            quantity_delta,
+            quantity_delta_canonical,
+            canonical_uom
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+      ORDER BY item_id ASC, location_id ASC, uom ASC`,
+    [harness.tenantId, movementId]
+  );
+  return result.rows.map((row) => ({
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    quantityDelta: Number(row.quantity_delta),
+    quantityDeltaCanonical: Number(row.quantity_delta_canonical),
+    canonicalUom: row.canonical_uom
+  }));
 }
 
 async function loadBalanceLine(harness, itemId, locationId, uom) {
@@ -624,6 +698,365 @@ test('ready work order succeeds after transfer to required consume location and 
   assert.equal(chocolateBalance.onHand, 750);
   assert.equal(chocolateBalance.reserved, 750);
   assert.equal(chocolateBalance.allocated, 0);
+});
+
+test('report-production consumes reserved components from manufacturing locations and produces to FG stage', async () => {
+  const {
+    harness,
+    rmStore,
+    packStore,
+    production,
+    fgStage,
+    wrapper,
+    chocolateBase,
+    output,
+    workOrder
+  } = await createMixedUomWorkOrderFixture('report-from-mfg-locations');
+
+  await seedStockAtLocation(harness, {
+    itemId: chocolateBase.id,
+    locationId: production.id,
+    quantity: 0.75,
+    unitCost: 2,
+    uom: 'kg',
+    label: 'report-mfg-chocolate'
+  });
+  await seedWrapperAtRmAndTransferToPack(harness, {
+    rmStore,
+    packStore,
+    wrapper,
+    workOrder,
+    label: 'report-mfg-wrapper'
+  });
+  await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+
+  const transferMovementCountBeforeReport = await countTransferMovements(harness);
+  const report = await harness.reportProduction(
+    workOrder.id,
+    {
+      outputQty: 10,
+      outputUom: 'each',
+      occurredAt: '2026-03-02T00:00:00.000Z',
+      notes: 'Report production from reserved manufacturing consume locations'
+    },
+    { actor: { type: 'system', id: null, role: 'system' } },
+    { idempotencyKey: `report-production-mfg-locations-${randomUUID()}` }
+  );
+  const transferMovementCountAfterReport = await countTransferMovements(harness);
+
+  assert.equal(report.workOrderId, workOrder.id);
+  assert.equal(report.replayed, false);
+  assert.equal(transferMovementCountAfterReport, transferMovementCountBeforeReport);
+
+  const issueLines = await loadMovementLines(harness, report.componentIssueMovementId);
+  const receiptLines = await loadMovementLines(harness, report.productionReceiptMovementId);
+  assert.equal(issueLines.length, 2);
+  assert.equal(receiptLines.length, 1);
+
+  const wrapperIssue = issueLines.find((line) => line.itemId === wrapper.id);
+  const chocolateIssue = issueLines.find((line) => line.itemId === chocolateBase.id);
+  const outputReceipt = receiptLines.find((line) => line.itemId === output.id);
+  assert.ok(wrapperIssue);
+  assert.ok(chocolateIssue);
+  assert.ok(outputReceipt);
+  assert.equal(wrapperIssue.locationId, packStore.id);
+  assert.equal(wrapperIssue.canonicalUom, 'each');
+  assert.equal(wrapperIssue.quantityDeltaCanonical, -10);
+  assert.equal(chocolateIssue.locationId, production.id);
+  assert.equal(chocolateIssue.canonicalUom, 'g');
+  assert.equal(chocolateIssue.quantityDeltaCanonical, -750);
+  assert.equal(outputReceipt.locationId, fgStage.id);
+  assert.equal(outputReceipt.canonicalUom, 'each');
+  assert.equal(outputReceipt.quantityDeltaCanonical, 10);
+
+  const wrapperBalance = await loadBalanceLine(harness, wrapper.id, packStore.id, 'each');
+  const chocolateBalance = await loadBalanceLine(harness, chocolateBase.id, production.id, 'g');
+  const outputBalance = await loadBalanceLine(harness, output.id, fgStage.id, 'each');
+  assert.equal(wrapperBalance.onHand, 0);
+  assert.equal(wrapperBalance.reserved, 0);
+  assert.equal(chocolateBalance.onHand, 0);
+  assert.equal(chocolateBalance.reserved, 0);
+  assert.equal(outputBalance.onHand, 10);
+});
+
+test('disassembly can reserve assembled input from WIP', async () => {
+  const {
+    harness,
+    consumeLocation,
+    assembledItem,
+    workOrder
+  } = await createDisassemblyPolicyFixture('accept-wip', 'WIP');
+
+  await seedStockAtLocation(harness, {
+    itemId: assembledItem.id,
+    locationId: consumeLocation.id,
+    quantity: 2,
+    unitCost: 3,
+    uom: 'each',
+    label: 'disassembly-accept-wip-input'
+  });
+  const updated = await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+  const readiness = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+
+  assert.equal(updated.status, 'ready');
+  assert.equal(readiness.hasShortage, false);
+  assert.equal(readiness.lines.length, 1);
+  assert.equal(readiness.lines[0].componentItemId, assembledItem.id);
+  assert.equal(readiness.lines[0].consumeLocationId, consumeLocation.id);
+  assert.equal(readiness.lines[0].reserved, 2);
+  assert.equal(readiness.lines[0].uom, 'each');
+});
+
+test('disassembly can consume finished input from FG_STAGE and posts one issue and one receipt movement', async () => {
+  const {
+    harness,
+    consumeLocation,
+    rmStore,
+    assembledItem,
+    component,
+    workOrder
+  } = await createDisassemblyPolicyFixture('accept-fg-stage', 'FG_STAGE');
+
+  await seedStockAtLocation(harness, {
+    itemId: assembledItem.id,
+    locationId: consumeLocation.id,
+    quantity: 2,
+    unitCost: 3,
+    uom: 'each',
+    label: 'disassembly-accept-fg-stage-input'
+  });
+
+  const updated = await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+  const readiness = await getWorkOrderReadiness(harness.tenantId, workOrder.id);
+
+  assert.equal(updated.status, 'ready');
+  assert.equal(readiness.hasShortage, false);
+  assert.equal(readiness.lines.length, 1);
+  assert.equal(readiness.lines[0].componentItemId, assembledItem.id);
+  assert.equal(readiness.lines[0].consumeLocationId, consumeLocation.id);
+  assert.equal(readiness.lines[0].reserved, 2);
+  assert.equal(readiness.lines[0].uom, 'each');
+
+  const batch = await harness.recordBatch(
+    workOrder.id,
+    {
+      occurredAt: '2026-03-03T00:00:00.000Z',
+      notes: 'Disassemble FG stage input',
+      consumeLines: [
+        {
+          componentItemId: assembledItem.id,
+          fromLocationId: consumeLocation.id,
+          uom: 'each',
+          quantity: 2
+        }
+      ],
+      produceLines: [
+        {
+          outputItemId: component.id,
+          toLocationId: rmStore.id,
+          uom: 'each',
+          quantity: 4
+        }
+      ]
+    },
+    { actor: { type: 'system', id: null, role: 'system' } },
+    { idempotencyKey: `disassembly-accept-fg-stage-${randomUUID()}` }
+  );
+
+  const issueLines = await loadMovementLines(harness, batch.issueMovementId);
+  const receiptLines = await loadMovementLines(harness, batch.receiveMovementId);
+  assert.equal(issueLines.length, 1);
+  assert.equal(receiptLines.length, 1);
+  assert.equal(issueLines[0].itemId, assembledItem.id);
+  assert.equal(issueLines[0].locationId, consumeLocation.id);
+  assert.equal(issueLines[0].canonicalUom, 'each');
+  assert.equal(issueLines[0].quantityDeltaCanonical, -2);
+  assert.equal(receiptLines[0].itemId, component.id);
+  assert.equal(receiptLines[0].locationId, rmStore.id);
+  assert.equal(receiptLines[0].canonicalUom, 'each');
+  assert.equal(receiptLines[0].quantityDeltaCanonical, 4);
+});
+
+test('disassembly rejects assembled input from raw-material or packaging stores', async () => {
+  for (const role of ['RM_STORE', 'PACKAGING']) {
+    const {
+      harness,
+      consumeLocation,
+      assembledItem,
+      workOrder
+    } = await createDisassemblyPolicyFixture(`reject-${role.toLowerCase()}`, role);
+
+    await seedStockAtLocation(harness, {
+      itemId: assembledItem.id,
+      locationId: consumeLocation.id,
+      quantity: 2,
+      unitCost: 3,
+      uom: 'each',
+      label: `disassembly-reject-${role.toLowerCase()}`
+    });
+
+    await assert.rejects(
+      () => transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready'),
+      (error) => {
+        assert.equal(error?.code ?? error?.message, 'WO_CONSUME_LOCATION_INVALID');
+        assert.equal(error.details?.workOrderId, workOrder.id);
+        assert.equal(error.details?.componentItemId, assembledItem.id);
+        assert.equal(error.details?.locationId, consumeLocation.id);
+        assert.equal(error.details?.locationRole, role);
+        return true;
+      }
+    );
+    assert.equal(await countWorkOrderReservations(harness, workOrder.id), 0);
+  }
+});
+
+test('disassembly batch rejects consume override from raw-material or packaging stores', async () => {
+  for (const role of ['RM_STORE', 'PACKAGING']) {
+    const {
+      harness,
+      consumeLocation: sellableLocation,
+      rmStore,
+      assembledItem,
+      component,
+      workOrder
+    } = await createDisassemblyPolicyFixture(`batch-reject-${role.toLowerCase()}`, 'SELLABLE');
+    const invalidConsumeLocation = await createFactoryLocation(
+      harness,
+      role,
+      `batch-reject-${role.toLowerCase()}`
+    );
+    await seedStockAtLocation(harness, {
+      itemId: assembledItem.id,
+      locationId: sellableLocation.id,
+      quantity: 2,
+      unitCost: 3,
+      uom: 'each',
+      label: `disassembly-batch-reserve-${role.toLowerCase()}`
+    });
+    await seedStockAtLocation(harness, {
+      itemId: assembledItem.id,
+      locationId: invalidConsumeLocation.id,
+      quantity: 2,
+      unitCost: 3,
+      uom: 'each',
+      label: `disassembly-batch-reject-${role.toLowerCase()}`
+    });
+    await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+
+    await assert.rejects(
+      () => harness.recordBatch(
+        workOrder.id,
+        {
+          occurredAt: '2026-03-03T00:00:00.000Z',
+          notes: `Invalid disassembly consume from ${role}`,
+          consumeLines: [
+            {
+              componentItemId: assembledItem.id,
+              fromLocationId: invalidConsumeLocation.id,
+              uom: 'each',
+              quantity: 2
+            }
+          ],
+          produceLines: [
+            {
+              outputItemId: component.id,
+              toLocationId: rmStore.id,
+              uom: 'each',
+              quantity: 4
+            }
+          ]
+        },
+        { actor: { type: 'system', id: null, role: 'system' } },
+        { idempotencyKey: `disassembly-batch-reject-${role}-${randomUUID()}` }
+      ),
+      (error) => {
+        assert.equal(error?.code ?? error?.message, 'WO_CONSUME_LOCATION_INVALID');
+        assert.equal(error.details?.workOrderId, workOrder.id);
+        assert.equal(error.details?.componentItemId, assembledItem.id);
+        assert.equal(error.details?.locationId, invalidConsumeLocation.id);
+        assert.equal(error.details?.locationRole, role);
+        return true;
+      }
+    );
+
+    const movementCount = await harness.pool.query(
+      `SELECT COUNT(*)::int AS count
+         FROM inventory_movements
+        WHERE tenant_id = $1
+          AND source_type = 'work_order_batch'
+          AND source_id = $2`,
+      [harness.tenantId, workOrder.id]
+    );
+    assert.equal(Number(movementCount.rows[0]?.count ?? 0), 0);
+  }
+});
+
+test('work-order readiness rejects component consumption from non-manufacturing non-sellable location', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'report-invalid-consume-location',
+    tenantName: 'Report Invalid Consume Location'
+  });
+  const suffix = randomUUID().slice(0, 6);
+  const holdLocation = await createFactoryLocation(harness, 'HOLD', suffix);
+  const component = await harness.createItem({
+    defaultLocationId: holdLocation.id,
+    skuPrefix: 'HOLDPART',
+    type: 'raw'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: harness.topology.defaults.SELLABLE.id,
+    skuPrefix: 'HOLDFG',
+    type: 'finished'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    suffix: `HOLD-${suffix}`,
+    components: [{ componentItemId: component.id, quantityPer: 1, uom: 'each' }],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: output.id,
+    outputUom: 'each',
+    quantityPlanned: 1,
+    defaultConsumeLocationId: holdLocation.id,
+    defaultProduceLocationId: harness.topology.defaults.SELLABLE.id
+  });
+
+  await seedStockAtLocation(harness, {
+    itemId: component.id,
+    locationId: holdLocation.id,
+    quantity: 1,
+    unitCost: 1,
+    uom: 'each',
+    label: 'invalid-consume-hold'
+  });
+
+  await assert.rejects(
+    () => transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready'),
+    (error) => {
+      assert.equal(error?.code ?? error?.message, 'WO_CONSUME_LOCATION_INVALID');
+      assert.equal(error.details?.workOrderId, workOrder.id);
+      assert.equal(error.details?.componentItemId, component.id);
+      assert.equal(error.details?.locationId, holdLocation.id);
+      assert.equal(error.details?.locationRole, 'HOLD');
+      return true;
+    }
+  );
+
+  assert.equal(await countWorkOrderReservations(harness, workOrder.id), 0);
+  const executionCount = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2`,
+    [harness.tenantId, workOrder.id]
+  );
+  assert.equal(Number(executionCount.rows[0]?.count ?? 0), 0);
 });
 
 test('ready work order returns controlled partial shortage after wrapper transfer when mass component is short', async () => {
