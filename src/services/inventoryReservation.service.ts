@@ -7,6 +7,7 @@ import { convertToCanonical } from './uomCanonical.service';
 import { deriveComponentConsumeLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
 import { fetchBomById, resolveEffectiveBom } from './boms.service';
 import { buildInventoryBalanceProjectionOp } from '../modules/platform/application/inventoryMutationSupport';
+import { isWorkOrderConsumeLocationAllowed } from '../domain/workOrders/locationPolicy';
 
 type WorkOrderRow = {
   id: string;
@@ -117,6 +118,31 @@ function workOrderPlanningRemainingQuantity(workOrder: WorkOrderRow) {
   return roundQuantity(Math.max(0, planned - completed - scrapped));
 }
 
+function assertWorkOrderConsumeLocationAllowed(params: {
+  workOrderId: string;
+  componentItemId: string;
+  locationId: string;
+  role: string | null | undefined;
+  isSellable: boolean;
+}) {
+  if (isWorkOrderConsumeLocationAllowed({ role: params.role, isSellable: params.isSellable })) {
+    return;
+  }
+  const error = new Error('WO_CONSUME_LOCATION_INVALID') as Error & {
+    code?: string;
+    details?: Record<string, unknown>;
+  };
+  error.code = 'WO_CONSUME_LOCATION_INVALID';
+  error.details = {
+    workOrderId: params.workOrderId,
+    componentItemId: params.componentItemId,
+    locationId: params.locationId,
+    locationRole: params.role ?? null,
+    isSellable: params.isSellable
+  };
+  throw error;
+}
+
 async function loadWorkOrderRow(
   tenantId: string,
   workOrderId: string,
@@ -191,6 +217,13 @@ async function buildProductionReservationPlan(
     if (!consumeLocation) {
       continue;
     }
+    assertWorkOrderConsumeLocationAllowed({
+      workOrderId: workOrder.id,
+      componentItemId: line.componentItemId,
+      locationId: consumeLocation.id,
+      role: consumeLocation.role,
+      isSellable: consumeLocation.isSellable
+    });
     const itemLabel = await loadItemLabel(tenantId, line.componentItemId, client);
     const key = [line.componentItemId, consumeLocation.id, line.uom].join(':');
     const existing = aggregate.get(key);
@@ -241,6 +274,13 @@ async function buildDisassemblyReservationPlan(
   if (!routing.defaultConsumeLocation) {
     return [];
   }
+  assertWorkOrderConsumeLocationAllowed({
+    workOrderId: workOrder.id,
+    componentItemId: workOrder.output_item_id,
+    locationId: routing.defaultConsumeLocation.id,
+    role: routing.defaultConsumeLocation.role,
+    isSellable: routing.defaultConsumeLocation.isSellable
+  });
   const itemLabel = await loadItemLabel(tenantId, workOrder.output_item_id, client);
   const normalizedRequested = await convertToCanonical(
     tenantId,

@@ -9,6 +9,7 @@ export type RoutingLocationHint = {
   code: string;
   name: string;
   role: string | null;
+  isSellable: boolean;
   warehouseId: string;
 };
 
@@ -39,6 +40,7 @@ type LocationRow = {
   local_code: string | null;
   name: string;
   role: string | null;
+  is_sellable: boolean;
   warehouse_id: string | null;
 };
 
@@ -49,7 +51,7 @@ async function resolveLocationById(
 ): Promise<RoutingLocationHint | null> {
   const executor = client ? client.query.bind(client) : query;
   const res = await executor<LocationRow>(
-    `SELECT id, code, local_code, name, role, warehouse_id
+    `SELECT id, code, local_code, name, role, is_sellable, warehouse_id
        FROM locations
       WHERE tenant_id = $1
         AND id = $2`,
@@ -62,6 +64,7 @@ async function resolveLocationById(
     code: row.code,
     name: row.name,
     role: row.role,
+    isSellable: row.is_sellable,
     warehouseId: row.warehouse_id
   };
 }
@@ -97,14 +100,14 @@ async function resolveLocationBySemantic(
 ): Promise<RoutingLocationHint | null> {
   const executor = client ? client.query.bind(client) : query;
   const res = await executor<LocationRow>(
-    `SELECT id, code, local_code, name, role, warehouse_id
+    `SELECT id, code, local_code, name, role, is_sellable, warehouse_id
        FROM locations
       WHERE tenant_id = $1
         AND warehouse_id = $2
       ORDER BY
-        CASE WHEN role = ANY($3::text[]) THEN 0 ELSE 1 END,
-        CASE WHEN local_code = ANY($4::text[]) THEN 0 ELSE 1 END,
-        CASE WHEN code = ANY($5::text[]) THEN 0 ELSE 1 END,
+        COALESCE(array_position($3::text[], role), 999),
+        COALESCE(array_position($4::text[], local_code), 999),
+        COALESCE(array_position($5::text[], code), 999),
         created_at ASC,
         id ASC`,
     [tenantId, warehouseId, params.roles, params.localCodes, params.codeHints]
@@ -122,6 +125,7 @@ async function resolveLocationBySemantic(
     code: row.code,
     name: row.name,
     role: row.role,
+    isSellable: row.is_sellable,
     warehouseId: row.warehouse_id
   };
 }

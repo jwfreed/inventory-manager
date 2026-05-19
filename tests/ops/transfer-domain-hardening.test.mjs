@@ -228,6 +228,30 @@ async function loadMovementLineSummary(harness, movementId) {
   };
 }
 
+async function loadMovementLines(harness, movementId) {
+  const result = await harness.pool.query(
+    `SELECT item_id,
+            location_id,
+            uom,
+            quantity_delta,
+            quantity_delta_canonical,
+            canonical_uom
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+      ORDER BY item_id ASC, location_id ASC, uom ASC`,
+    [harness.tenantId, movementId]
+  );
+  return result.rows.map((row) => ({
+    itemId: row.item_id,
+    locationId: row.location_id,
+    uom: row.uom,
+    quantityDelta: Number(row.quantity_delta),
+    quantityDeltaCanonical: Number(row.quantity_delta_canonical),
+    canonicalUom: row.canonical_uom
+  }));
+}
+
 async function loadBalanceLine(harness, itemId, locationId, uom) {
   const rows = await harness.snapshotInventoryBalance();
   return rows.find((row) =>
@@ -624,6 +648,153 @@ test('ready work order succeeds after transfer to required consume location and 
   assert.equal(chocolateBalance.onHand, 750);
   assert.equal(chocolateBalance.reserved, 750);
   assert.equal(chocolateBalance.allocated, 0);
+});
+
+test('report-production consumes reserved components from manufacturing locations and produces to FG stage', async () => {
+  const {
+    harness,
+    rmStore,
+    packStore,
+    production,
+    fgStage,
+    wrapper,
+    chocolateBase,
+    output,
+    workOrder
+  } = await createMixedUomWorkOrderFixture('report-from-mfg-locations');
+
+  await seedStockAtLocation(harness, {
+    itemId: chocolateBase.id,
+    locationId: production.id,
+    quantity: 0.75,
+    unitCost: 2,
+    uom: 'kg',
+    label: 'report-mfg-chocolate'
+  });
+  await seedWrapperAtRmAndTransferToPack(harness, {
+    rmStore,
+    packStore,
+    wrapper,
+    workOrder,
+    label: 'report-mfg-wrapper'
+  });
+  await transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready');
+
+  const transferMovementCountBeforeReport = await countTransferMovements(harness);
+  const report = await harness.reportProduction(
+    workOrder.id,
+    {
+      outputQty: 10,
+      outputUom: 'each',
+      occurredAt: '2026-03-02T00:00:00.000Z',
+      notes: 'Report production from reserved manufacturing consume locations'
+    },
+    { actor: { type: 'system', id: null, role: 'system' } },
+    { idempotencyKey: `report-production-mfg-locations-${randomUUID()}` }
+  );
+  const transferMovementCountAfterReport = await countTransferMovements(harness);
+
+  assert.equal(report.workOrderId, workOrder.id);
+  assert.equal(report.replayed, false);
+  assert.equal(transferMovementCountAfterReport, transferMovementCountBeforeReport);
+
+  const issueLines = await loadMovementLines(harness, report.componentIssueMovementId);
+  const receiptLines = await loadMovementLines(harness, report.productionReceiptMovementId);
+  assert.equal(issueLines.length, 2);
+  assert.equal(receiptLines.length, 1);
+
+  const wrapperIssue = issueLines.find((line) => line.itemId === wrapper.id);
+  const chocolateIssue = issueLines.find((line) => line.itemId === chocolateBase.id);
+  const outputReceipt = receiptLines.find((line) => line.itemId === output.id);
+  assert.ok(wrapperIssue);
+  assert.ok(chocolateIssue);
+  assert.ok(outputReceipt);
+  assert.equal(wrapperIssue.locationId, packStore.id);
+  assert.equal(wrapperIssue.canonicalUom, 'each');
+  assert.equal(wrapperIssue.quantityDeltaCanonical, -10);
+  assert.equal(chocolateIssue.locationId, production.id);
+  assert.equal(chocolateIssue.canonicalUom, 'g');
+  assert.equal(chocolateIssue.quantityDeltaCanonical, -750);
+  assert.equal(outputReceipt.locationId, fgStage.id);
+  assert.equal(outputReceipt.canonicalUom, 'each');
+  assert.equal(outputReceipt.quantityDeltaCanonical, 10);
+
+  const wrapperBalance = await loadBalanceLine(harness, wrapper.id, packStore.id, 'each');
+  const chocolateBalance = await loadBalanceLine(harness, chocolateBase.id, production.id, 'g');
+  const outputBalance = await loadBalanceLine(harness, output.id, fgStage.id, 'each');
+  assert.equal(wrapperBalance.onHand, 0);
+  assert.equal(wrapperBalance.reserved, 0);
+  assert.equal(chocolateBalance.onHand, 0);
+  assert.equal(chocolateBalance.reserved, 0);
+  assert.equal(outputBalance.onHand, 10);
+});
+
+test('work-order readiness rejects component consumption from non-manufacturing non-sellable location', async () => {
+  const harness = await createServiceHarness({
+    tenantPrefix: 'report-invalid-consume-location',
+    tenantName: 'Report Invalid Consume Location'
+  });
+  const suffix = randomUUID().slice(0, 6);
+  const holdLocation = await createFactoryLocation(harness, 'HOLD', suffix);
+  const component = await harness.createItem({
+    defaultLocationId: holdLocation.id,
+    skuPrefix: 'HOLDPART',
+    type: 'raw'
+  });
+  const output = await harness.createItem({
+    defaultLocationId: harness.topology.defaults.SELLABLE.id,
+    skuPrefix: 'HOLDFG',
+    type: 'finished'
+  });
+  const bom = await harness.createBomAndActivate({
+    outputItemId: output.id,
+    suffix: `HOLD-${suffix}`,
+    components: [{ componentItemId: component.id, quantityPer: 1, uom: 'each' }],
+    defaultUom: 'each',
+    yieldQuantity: 1,
+    yieldUom: 'each'
+  });
+  const workOrder = await harness.createWorkOrder({
+    kind: 'production',
+    bomId: bom.id,
+    bomVersionId: bom.versions[0].id,
+    outputItemId: output.id,
+    outputUom: 'each',
+    quantityPlanned: 1,
+    defaultConsumeLocationId: holdLocation.id,
+    defaultProduceLocationId: harness.topology.defaults.SELLABLE.id
+  });
+
+  await seedStockAtLocation(harness, {
+    itemId: component.id,
+    locationId: holdLocation.id,
+    quantity: 1,
+    unitCost: 1,
+    uom: 'each',
+    label: 'invalid-consume-hold'
+  });
+
+  await assert.rejects(
+    () => transitionWorkOrderStatus(harness.tenantId, workOrder.id, 'ready'),
+    (error) => {
+      assert.equal(error?.code ?? error?.message, 'WO_CONSUME_LOCATION_INVALID');
+      assert.equal(error.details?.workOrderId, workOrder.id);
+      assert.equal(error.details?.componentItemId, component.id);
+      assert.equal(error.details?.locationId, holdLocation.id);
+      assert.equal(error.details?.locationRole, 'HOLD');
+      return true;
+    }
+  );
+
+  assert.equal(await countWorkOrderReservations(harness, workOrder.id), 0);
+  const executionCount = await harness.pool.query(
+    `SELECT COUNT(*)::int AS count
+       FROM work_order_executions
+      WHERE tenant_id = $1
+        AND work_order_id = $2`,
+    [harness.tenantId, workOrder.id]
+  );
+  assert.equal(Number(executionCount.rows[0]?.count ?? 0), 0);
 });
 
 test('ready work order returns controlled partial shortage after wrapper transfer when mass component is short', async () => {

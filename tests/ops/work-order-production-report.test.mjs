@@ -1453,21 +1453,35 @@ test('concurrent report-production calls on shared component do not oversell', {
   await runStrictInvariantsForTenant(session.tenant.id);
 });
 
-test('report-production fails loud when SELLABLE default points to a non-sellable location', async () => {
-  const tenantSlug = `wo-report-no-line-side-${randomUUID().slice(0, 8)}`;
+test('report-production ignores SELLABLE default drift when work-order consume location is valid', async () => {
+  const tenantSlug = `wo-report-mfg-consume-${randomUUID().slice(0, 8)}`;
   const session = await ensureDbSession({
     apiRequest,
     adminEmail,
     adminPassword,
     tenantSlug,
-    tenantName: 'WO Report Production No Line Side Policy Tenant'
+    tenantName: 'WO Report Production Manufacturing Consume Tenant'
   });
   const token = session.accessToken;
   const tenantId = session.tenant.id;
   const db = session.pool;
-  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:no-line-side` });
+  const { warehouse, defaults } = await ensureStandardWarehouse({ token, apiRequest, scope: `${import.meta.url}:mfg-consume` });
 
-  const component = await createItem(token, defaults.SELLABLE.id, 'NOLS-RAW', 'raw');
+  const rmStoreRes = await apiRequest('POST', '/locations', {
+    token,
+    body: {
+      code: `MFG-RM-${randomUUID().slice(0, 8)}`,
+      name: 'Manufacturing Raw Material Store',
+      type: 'bin',
+      role: 'RM_STORE',
+      isSellable: false,
+      parentLocationId: warehouse.id,
+      active: true
+    }
+  });
+  assert.equal(rmStoreRes.res.status, 201, JSON.stringify(rmStoreRes.payload));
+
+  const component = await createItem(token, rmStoreRes.payload.id, 'MFG-RAW', 'raw');
   const outputItem = await createItem(token, defaults.QA.id, 'NOLS-FG', 'finished');
   const bomId = await createBom(token, outputItem, [{ componentItemId: component, quantityPer: 1 }], tenantSlug);
   const workOrder = await createWorkOrder(token, {
@@ -1476,7 +1490,7 @@ test('report-production fails loud when SELLABLE default points to a non-sellabl
     outputUom: 'each',
     quantityPlanned: 1,
     bomId,
-    defaultConsumeLocationId: defaults.SELLABLE.id,
+    defaultConsumeLocationId: rmStoreRes.payload.id,
     defaultProduceLocationId: defaults.QA.id
   });
 
@@ -1504,9 +1518,36 @@ test('report-production fails loud when SELLABLE default points to a non-sellabl
   );
   assert.equal(remapRes.rowCount, 1, 'expected SELLABLE default remap to HOLD for policy test');
 
+  const adjustmentRes = await apiRequest('POST', '/inventory-adjustments', {
+    token,
+    headers: { 'Idempotency-Key': `wo-report-mfg-consume-adjust:${tenantSlug}` },
+    body: {
+      occurredAt: '2026-02-12T00:00:00.000Z',
+      reasonCode: 'seed_work_order_component',
+      lines: [
+        {
+          lineNumber: 1,
+          itemId: component,
+          locationId: rmStoreRes.payload.id,
+          uom: 'each',
+          quantityDelta: 1,
+          unitCostForPositiveAdjustment: 1,
+          reasonCode: 'seed_work_order_component'
+        }
+      ]
+    }
+  });
+  assert.equal(adjustmentRes.res.status, 201, JSON.stringify(adjustmentRes.payload));
+  const postAdjustmentRes = await apiRequest('POST', `/inventory-adjustments/${adjustmentRes.payload.id}/post`, {
+    token,
+    headers: { 'Idempotency-Key': `wo-report-mfg-consume-adjust-post:${tenantSlug}` },
+    body: {}
+  });
+  assert.equal(postAdjustmentRes.res.status, 200, JSON.stringify(postAdjustmentRes.payload));
+
   const reportRes = await apiRequest('POST', `/work-orders/${workOrder.id}/report-production`, {
     token,
-    headers: { 'Idempotency-Key': `wo-report-no-line-side:${tenantSlug}` },
+    headers: { 'Idempotency-Key': `wo-report-mfg-consume:${tenantSlug}` },
     body: {
       warehouseId: warehouse.id,
       outputQty: 1,
@@ -1514,17 +1555,29 @@ test('report-production fails loud when SELLABLE default points to a non-sellabl
       occurredAt: '2026-02-13T00:00:00.000Z'
     }
   });
-  assert.equal(reportRes.res.status, 409, JSON.stringify(reportRes.payload));
-  assert.equal(reportRes.payload?.error?.code, 'MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE');
+  assert.equal(reportRes.res.status, 201, JSON.stringify(reportRes.payload));
 
   const executionRes = await db.query(
     `SELECT COUNT(*)::int AS count
        FROM work_order_executions
       WHERE tenant_id = $1
-        AND work_order_id = $2`,
+      AND work_order_id = $2`,
     [tenantId, workOrder.id]
   );
-  assert.equal(Number(executionRes.rows[0].count), 0, 'no execution should be posted when consumption source is non-sellable');
+  assert.equal(Number(executionRes.rows[0].count), 1, 'one execution should post from a valid manufacturing consume location');
+
+  const issueLineRes = await db.query(
+    `SELECT location_id, quantity_delta_canonical, canonical_uom
+       FROM inventory_movement_lines
+      WHERE tenant_id = $1
+        AND movement_id = $2
+        AND item_id = $3`,
+    [tenantId, reportRes.payload.componentIssueMovementId, component]
+  );
+  assert.equal(issueLineRes.rowCount, 1);
+  assert.equal(issueLineRes.rows[0].location_id, rmStoreRes.payload.id);
+  assert.equal(Number(issueLineRes.rows[0].quantity_delta_canonical), -1);
+  assert.equal(issueLineRes.rows[0].canonical_uom, 'each');
 });
 
 test('line-side/staging roles are rejected by master-data capability guards', async () => {

@@ -1,4 +1,3 @@
-import { query } from '../../db';
 import { roundQuantity, toNumber } from '../../lib/numbers';
 import {
   deriveWorkOrderStageRouting
@@ -16,11 +15,6 @@ import {
 import type {
   WorkOrderInputLotLink
 } from '../../services/lotTraceabilityEngine';
-
-type DomainError = Error & {
-  code?: string;
-  details?: Record<string, unknown>;
-};
 
 type ReportProductionData = {
   warehouseId?: string;
@@ -74,42 +68,6 @@ export type ReportProductionPolicy = Readonly<{
   productionBatchId: string | null;
   notes: string | null;
 }>;
-
-function domainError(code: string, details?: Record<string, unknown>): DomainError {
-  const error = new Error(code) as DomainError;
-  error.code = code;
-  error.details = details;
-  return error;
-}
-
-export async function assertReportProductionWarehouseSellableDefault(params: {
-  tenantId: string;
-  workOrderId: string;
-  warehouseId?: string | null;
-}) {
-  if (!params.warehouseId) {
-    return;
-  }
-  const sellableDefaultRes = await query<{ location_id: string; is_sellable: boolean }>(
-    `SELECT wdl.location_id, l.is_sellable
-       FROM warehouse_default_location wdl
-       JOIN locations l
-         ON l.id = wdl.location_id
-        AND l.tenant_id = wdl.tenant_id
-      WHERE wdl.tenant_id = $1
-        AND wdl.warehouse_id = $2
-        AND wdl.role = 'SELLABLE'
-      LIMIT 1`,
-    [params.tenantId, params.warehouseId]
-  );
-  if (!sellableDefaultRes.rows[0]?.is_sellable) {
-    throw domainError('MANUFACTURING_CONSUMPTION_MUST_BE_SELLABLE', {
-      workOrderId: params.workOrderId,
-      warehouseId: params.warehouseId,
-      locationId: sellableDefaultRes.rows[0]?.location_id ?? null
-    });
-  }
-}
 
 export async function evaluateReportProductionPolicy(params: {
   tenantId: string;

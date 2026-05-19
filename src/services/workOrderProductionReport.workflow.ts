@@ -1,12 +1,11 @@
 import type { z } from 'zod';
-import { query, withTransaction } from '../db';
+import { withTransaction } from '../db';
 import { workOrderReportProductionSchema } from '../schemas/workOrderExecution.schema';
 import { IDEMPOTENCY_ENDPOINTS } from '../lib/idempotencyEndpoints';
 import {
   buildReportProductionPlan
 } from '../domain/workOrders/reportProductionPlan';
 import {
-  assertReportProductionWarehouseSellableDefault,
   evaluateReportProductionPolicy
 } from '../domain/workOrders/reportProductionPolicy';
 import { recordWorkOrderBatch } from './workOrderBatchRecord.workflow';
@@ -57,18 +56,6 @@ function shouldSimulateLotLinkFailureOnce(idempotencyKey: string | null, replaye
   return true;
 }
 
-async function hasExistingReportProductionIdempotencyClaim(tenantId: string, idempotencyKey: string) {
-  const existing = await query<{ key: string }>(
-    `SELECT key
-       FROM idempotency_keys
-      WHERE tenant_id = $1
-        AND key = $2
-      LIMIT 1`,
-    [tenantId, idempotencyKey]
-  );
-  return (existing.rowCount ?? 0) > 0;
-}
-
 // WF-6: Report Work Order Production
 //
 // This workflow is the explicit TWO-TRANSACTION exception in Sprint 3 Phase B.
@@ -106,16 +93,6 @@ export async function reportWorkOrderProduction(
     workOrderId,
     policy
   });
-  const shouldBypassWarehouseSellableGuard = policy.reportIdempotencyKey
-    ? await hasExistingReportProductionIdempotencyClaim(tenantId, policy.reportIdempotencyKey)
-    : false;
-  if (!shouldBypassWarehouseSellableGuard) {
-    await assertReportProductionWarehouseSellableDefault({
-      tenantId,
-      workOrderId,
-      warehouseId: data.warehouseId ?? null
-    });
-  }
 
   // TX-1: authoritative inventory mutation via recordWorkOrderBatch() -> runInventoryCommand()
   const batchResult = await recordWorkOrderBatch(
