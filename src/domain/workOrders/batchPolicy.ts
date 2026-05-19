@@ -15,7 +15,7 @@ import {
   compareBatchProduceKey
 } from '../../services/workOrderExecution.ordering';
 import {
-  isWorkOrderConsumeLocationAllowed
+  isWorkOrderConsumeLocationAllowedForKind
 } from './locationPolicy';
 import type {
   NormalizedBatchConsumeLine,
@@ -233,10 +233,13 @@ export async function evaluateWorkOrderBatchPolicy(params: {
     const locationById = new Map(locationRes.rows.map((row) => [row.id, row]));
     for (const line of consumeLinesOrdered) {
       const consumeLocation = locationById.get(line.fromLocationId);
-      if (!consumeLocation || !isWorkOrderConsumeLocationAllowed({
-        role: consumeLocation.role,
-        isSellable: consumeLocation.is_sellable
-      })) {
+      if (!consumeLocation || !isWorkOrderConsumeLocationAllowedForKind(
+        workOrder.kind,
+        {
+          role: consumeLocation.role,
+          isSellable: consumeLocation.is_sellable
+        }
+      )) {
         throw domainError('WO_CONSUME_LOCATION_INVALID', {
           workOrderId: params.workOrderId,
           componentItemId: line.componentItemId,

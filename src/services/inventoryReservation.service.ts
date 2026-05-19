@@ -7,7 +7,7 @@ import { convertToCanonical } from './uomCanonical.service';
 import { deriveComponentConsumeLocation, deriveWorkOrderStageRouting } from './stageRouting.service';
 import { fetchBomById, resolveEffectiveBom } from './boms.service';
 import { buildInventoryBalanceProjectionOp } from '../modules/platform/application/inventoryMutationSupport';
-import { isWorkOrderConsumeLocationAllowed } from '../domain/workOrders/locationPolicy';
+import { isWorkOrderConsumeLocationAllowedForKind } from '../domain/workOrders/locationPolicy';
 
 type WorkOrderRow = {
   id: string;
@@ -119,13 +119,17 @@ function workOrderPlanningRemainingQuantity(workOrder: WorkOrderRow) {
 }
 
 function assertWorkOrderConsumeLocationAllowed(params: {
+  kind: string;
   workOrderId: string;
   componentItemId: string;
   locationId: string;
   role: string | null | undefined;
   isSellable: boolean;
 }) {
-  if (isWorkOrderConsumeLocationAllowed({ role: params.role, isSellable: params.isSellable })) {
+  if (isWorkOrderConsumeLocationAllowedForKind(
+    params.kind,
+    { role: params.role, isSellable: params.isSellable }
+  )) {
     return;
   }
   const error = new Error('WO_CONSUME_LOCATION_INVALID') as Error & {
@@ -218,6 +222,7 @@ async function buildProductionReservationPlan(
       continue;
     }
     assertWorkOrderConsumeLocationAllowed({
+      kind: workOrder.kind,
       workOrderId: workOrder.id,
       componentItemId: line.componentItemId,
       locationId: consumeLocation.id,
@@ -275,6 +280,7 @@ async function buildDisassemblyReservationPlan(
     return [];
   }
   assertWorkOrderConsumeLocationAllowed({
+    kind: workOrder.kind,
     workOrderId: workOrder.id,
     componentItemId: workOrder.output_item_id,
     locationId: routing.defaultConsumeLocation.id,

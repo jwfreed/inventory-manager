@@ -264,7 +264,7 @@ export async function deriveWorkOrderStageRouting(
     return {
       stageType,
       stageLabel,
-      defaultConsumeLocation: fgStage ?? fallbackConsumeLocation,
+      defaultConsumeLocation: fallbackConsumeLocation ?? fgStage,
       defaultProduceLocation: wipStore ?? packStore ?? rmStore ?? fgStage,
       routingLocked: true
     };

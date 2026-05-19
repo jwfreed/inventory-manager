@@ -139,6 +139,15 @@ router.post('/work-orders/:id/disassemble', async (req: Request, res: Response) 
         }
       });
     }
+    if (error?.code === 'WO_CONSUME_LOCATION_INVALID' || error?.message === 'WO_CONSUME_LOCATION_INVALID') {
+      return res.status(409).json({
+        error: {
+          code: 'WO_CONSUME_LOCATION_INVALID',
+          message: 'Disassembly consumption must source from a valid disassembly consume location.',
+          details: error?.details ?? {}
+        }
+      });
+    }
     if (error?.message === 'WO_DISASSEMBLY_KIND_REQUIRED') {
       return res.status(400).json({ error: 'This work order is not configured for disassembly.' });
     }
