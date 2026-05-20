@@ -1016,4 +1016,87 @@ describe('WorkOrderDetailPage tabs', () => {
 
     expect(screen.queryByText('__execution_workspace__')).not.toBeInTheDocument()
   })
+
+  it('hides Recent production report section when work order execution is locked', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.queryByText('Recent production report')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Only the most recent report/)).not.toBeInTheDocument()
+  })
+
+  it('shows BOM code (not raw UUID) in Configuration health context rail', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'ready', bomId: 'bom-uuid-123' }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseBom.mockReturnValue({
+      data: { id: 'bom-uuid-123', bomCode: 'BOM-CHOC-BASE', versions: [] },
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('__work_order_header__')
+
+    expect(screen.getByText('Configuration health')).toBeInTheDocument()
+    expect(screen.getByText('BOM-CHOC-BASE')).toBeInTheDocument()
+    expect(screen.queryByText('bom-uuid-123')).not.toBeInTheDocument()
+  })
+
+  it('shows Work order status panel title (not Execution workspace) when execution is locked', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.getByText('Work order status')).toBeInTheDocument()
+    expect(screen.queryByText('Execution workspace')).not.toBeInTheDocument()
+  })
 })

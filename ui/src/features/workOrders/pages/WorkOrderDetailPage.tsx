@@ -50,7 +50,7 @@ import { WorkOrderNextStepPanel } from '../components/WorkOrderNextStepPanel'
 import { useLocationsList } from '@features/locations/queries'
 import { getAtp } from '@api/reports'
 import type { AtpResult } from '@api/types'
-import { formatNumber } from '@shared/formatters'
+import { formatDate, formatNumber } from '@shared/formatters'
 import {
   type RecentProductionReportCandidate,
   getWorkOrderActionPolicy,
@@ -636,7 +636,7 @@ export default function WorkOrderDetailPage() {
         <Banner
           severity="info"
           title="Work order completed"
-          description={`Completed at ${executionQuery.data.workOrder.completedAt}.`}
+          description={`Completed ${formatDate(executionQuery.data.workOrder.completedAt)}.`}
           action={
             <Button
               variant="secondary"
@@ -712,7 +712,7 @@ export default function WorkOrderDetailPage() {
       ? {
           title: 'Configuration health',
           items: [
-            { label: 'BOM', value: wo.bomId ?? '—' },
+            { label: 'BOM', value: bomQuery.data?.bomCode ?? activeBomCode ?? '—' },
             { label: 'Used version', value: usedBomVersion ? `v${usedBomVersion.versionNumber}` : '—' },
             { label: 'Active version', value: activeVersionLabel ? `v${activeVersionLabel}` : '—' },
             { label: 'Consume location', value: defaultConsumeLocationLabel },
@@ -814,7 +814,7 @@ export default function WorkOrderDetailPage() {
       >
         {workOrderQuery.data ? (
           <section id="inventory">
-            <Panel title="Inventory status" description="Current ATP context for this work order's output item.">
+            <Panel title="Inventory status" description="Available inventory for this work order's output item.">
               <div className="grid gap-3 text-sm md:grid-cols-5">
                 <div>
                   <div className="text-xs uppercase tracking-wide text-slate-500">On hand</div>
@@ -1089,7 +1089,10 @@ export default function WorkOrderDetailPage() {
         ) : null}
 
         <section id="actions">
-          <Panel title="Execution workspace" description="Locked routing, readiness, deterministic posting, and movement review in one place.">
+          <Panel
+            title={actionPolicy.executionLocked ? 'Work order status' : 'Execution workspace'}
+            description={actionPolicy.executionLocked ? 'Production is complete. Execution is locked for audit integrity.' : 'Locked routing, readiness, deterministic posting, and movement review in one place.'}
+          >
             <div id="work-order-actions" ref={actionsRef} className="scroll-mt-24">
               {workOrderQuery.data && actionPolicy.executionLocked ? (
                 <ActionGuardMessage
@@ -1148,7 +1151,7 @@ export default function WorkOrderDetailPage() {
               )}
             </div>
 
-            {workOrderQuery.data && (
+            {workOrderQuery.data && !actionPolicy.executionLocked && (
               <div className="mt-4">
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1180,11 +1183,11 @@ export default function WorkOrderDetailPage() {
                         <div className="mt-1">Notes: {recentProductionReport.notes}</div>
                       ) : null}
                     </div>
-                  ) : !actionPolicy.executionLocked ? (
+                  ) : (
                     <div className="mt-3 text-sm text-slate-600">
                       Post production from this page to enable the recent-report void action.
                     </div>
-                  ) : null}
+                  )}
                   {!actionPolicy.canVoidRecentReport && actionPolicy.voidRecentReportDisabledReason ? (
                     <div className="mt-3 text-xs text-slate-500">
                       {actionPolicy.voidRecentReportDisabledReason}

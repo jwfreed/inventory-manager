@@ -48,6 +48,7 @@ describe('ItemReadinessPanel', () => {
     hasActiveBom: false,
     hasRouting: false,
     onAdjustStock: vi.fn(),
+    onTransferStock: vi.fn(),
     onViewMovements: vi.fn(),
     onCreateRouting: vi.fn(),
   }
@@ -304,6 +305,7 @@ describe('ItemReadinessPanel zero inventory compressed display', () => {
         hasActiveBom={false}
         hasRouting={false}
         onAdjustStock={vi.fn()}
+        onTransferStock={vi.fn()}
         onViewMovements={vi.fn()}
         onCreateRouting={vi.fn()}
       />,
@@ -331,6 +333,7 @@ describe('ItemReadinessPanel zero inventory compressed display', () => {
         hasActiveBom={false}
         hasRouting={false}
         onAdjustStock={vi.fn()}
+        onTransferStock={vi.fn()}
         onViewMovements={vi.fn()}
         onCreateRouting={vi.fn()}
       />,
@@ -458,6 +461,7 @@ describe('Neutral zero-stock copy', () => {
     hasActiveBom: false,
     hasRouting: false,
     onAdjustStock: vi.fn(),
+    onTransferStock: vi.fn(),
     onViewMovements: vi.fn(),
     onCreateRouting: vi.fn(),
   }
