@@ -635,8 +635,8 @@ export default function WorkOrderDetailPage() {
       {executionQuery.data?.workOrder.completedAt ? (
         <Banner
           severity="info"
-          title="Work order completed"
-          description={`Completed ${formatDate(executionQuery.data.workOrder.completedAt)}.`}
+          title="Production complete"
+          description={`Produced ${formatNumber(executionQuery.data.workOrder.quantityCompleted ?? 0)} ${executionQuery.data.workOrder.outputUom} on ${formatDate(executionQuery.data.workOrder.completedAt)}.`}
           action={
             <Button
               variant="secondary"
@@ -740,7 +740,7 @@ export default function WorkOrderDetailPage() {
         ],
       },
     ]
-  }, [workOrderQuery.data, actionPolicy.executionLocked, remaining, usedBomVersion, activeVersionLabel, defaultConsumeLocationLabel, itemLabel, navigate, scrollToExecutionWorkspace, formatNumber, nextStepAvailable, nextStepCtaLabel, setShowNextStep])
+  }, [workOrderQuery.data, actionPolicy.executionLocked, remaining, usedBomVersion, activeVersionLabel, activeBomCode, bomQuery.data, defaultConsumeLocationLabel, itemLabel, navigate, scrollToExecutionWorkspace, formatNumber, nextStepAvailable, nextStepCtaLabel, setShowNextStep])
 
   const sectionLinks = isDisassembly
     ? workOrderDetailSections.filter((section) => section.id !== 'requirements')
@@ -813,7 +813,7 @@ export default function WorkOrderDetailPage() {
         contextRail={<ContextRail sections={contextSections} />}
       >
         {workOrderQuery.data ? (
-          <section id="inventory">
+          <section id="inventory" className="scroll-mt-20">
             <Panel title="Inventory status" description="Available inventory for this work order's output item.">
               <div className="grid gap-3 text-sm md:grid-cols-5">
                 <div>
@@ -844,7 +844,7 @@ export default function WorkOrderDetailPage() {
         ) : null}
 
         {workOrderQuery.data ? (
-          <section id="execution" className="space-y-6">
+          <section id="execution" className="scroll-mt-20 space-y-6">
             {actionPolicy.executionLocked && executionQuery.data &&
               (executionQuery.data.completedTotals.length > 0 || executionQuery.data.issuedTotals.length > 0) ? (
               <Panel title="Inventory impact" description="What was produced and consumed during this work order.">
@@ -872,10 +872,10 @@ export default function WorkOrderDetailPage() {
                         {executionQuery.data.issuedTotals.map((row) => (
                           <li
                             key={`${row.componentItemId}-${row.uom}`}
-                            className="flex items-center justify-between rounded-lg border border-slate-100 bg-red-50/40 px-3 py-2"
+                            className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2"
                           >
                             <span className="text-slate-700">{row.componentItemName ?? row.componentItemSku ?? 'Unknown item'}</span>
-                            <span className="font-semibold text-red-600">-{formatNumber(row.quantityIssued)} {row.uom}</span>
+                            <span className="font-semibold text-slate-700">Consumed {formatNumber(row.quantityIssued)} {row.uom}</span>
                           </li>
                         ))}
                       </ul>
@@ -1038,7 +1038,7 @@ export default function WorkOrderDetailPage() {
         ) : null}
 
         {!isDisassembly ? (
-          <section id="requirements">
+          <section id="requirements" className="scroll-mt-20">
             <Panel title="Requirements vs issued" description={actionPolicy.executionLocked ? "Audit record: BOM requirements compared to issued quantities. Production is complete." : "Compare BOM requirements to issued quantities for each component."}>
               {requirementsQuery.isLoading ? <LoadingSpinner label="Loading requirements..." /> : null}
               {requirementsQuery.isError ? (
@@ -1088,7 +1088,7 @@ export default function WorkOrderDetailPage() {
           </section>
         ) : null}
 
-        <section id="actions">
+        <section id="actions" className="scroll-mt-20">
           <Panel
             title={actionPolicy.executionLocked ? 'Work order status' : 'Execution workspace'}
             description={actionPolicy.executionLocked ? 'Production is complete. Execution is locked for audit integrity.' : 'Locked routing, readiness, deterministic posting, and movement review in one place.'}

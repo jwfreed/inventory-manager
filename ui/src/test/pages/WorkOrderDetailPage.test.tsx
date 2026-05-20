@@ -1099,4 +1099,73 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(screen.getByText('Work order status')).toBeInTheDocument()
     expect(screen.queryByText('Execution workspace')).not.toBeInTheDocument()
   })
+
+  it('completed WO shows "Production complete" banner with produced quantity and date', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 10 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 10, quantityCompleted: 10, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.getByText('Production complete')).toBeInTheDocument()
+    expect(screen.queryByText('Work order completed')).not.toBeInTheDocument()
+    // Banner description includes produced quantity and UOM
+    expect(screen.getByText(/Produced 10 kg on/)).toBeInTheDocument()
+  })
+
+  it('inventory impact consumed items show neutral "Consumed X" label, not red negative', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', quantityCompleted: 1 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'production',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 1, quantityCompleted: 1, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [
+          { componentItemId: 'item-c1', componentItemName: 'Milk Chocolate Base', componentItemSku: 'MCB-001', uom: 'g', quantityIssued: 750 },
+        ],
+        completedTotals: [
+          { outputItemId: 'item-1', outputItemName: 'Chocolate Bar', outputItemSku: 'CB-001', uom: 'kg', quantityCompleted: 1 },
+        ],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    // Consumed label with quantity, no negative sign
+    expect(screen.getByText('Consumed 750 g')).toBeInTheDocument()
+    expect(screen.queryByText(/-750/)).not.toBeInTheDocument()
+  })
 })

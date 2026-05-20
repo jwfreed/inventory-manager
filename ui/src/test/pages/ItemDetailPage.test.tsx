@@ -82,10 +82,26 @@ describe('ItemReadinessPanel', () => {
       expect(screen.getByText(/Negative on-hand detected/)).toBeInTheDocument()
     })
 
-    it('shows Adjust stock and View movements actions', () => {
+    it('shows Adjust stock, Transfer stock, and View movements actions', () => {
       render(<ItemReadinessPanel {...baseProps} />)
       expect(screen.getByRole('button', { name: 'Adjust stock' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Transfer stock' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'View movements' })).toBeInTheDocument()
+    })
+
+    it('View movements appears before Transfer stock in DOM order', () => {
+      render(<ItemReadinessPanel {...baseProps} />)
+      const buttons = screen.getAllByRole('button')
+      const viewIdx = buttons.findIndex((b) => b.textContent === 'View movements')
+      const transferIdx = buttons.findIndex((b) => b.textContent === 'Transfer stock')
+      expect(viewIdx).toBeLessThan(transferIdx)
+    })
+
+    it('calls onTransferStock when Transfer stock is clicked', () => {
+      const onTransferStock = vi.fn()
+      render(<ItemReadinessPanel {...baseProps} onTransferStock={onTransferStock} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Transfer stock' }))
+      expect(onTransferStock).toHaveBeenCalledOnce()
     })
 
     it('calls onAdjustStock when Adjust stock is clicked', () => {

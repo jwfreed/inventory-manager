@@ -87,14 +87,14 @@ export function ItemReadinessPanel({
           </div>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={onAdjustStock}>
-            Adjust stock
+          <Button variant="secondary" size="sm" onClick={onViewMovements}>
+            View movements
           </Button>
           <Button variant="secondary" size="sm" onClick={onTransferStock}>
             Transfer stock
           </Button>
-          <Button variant="secondary" size="sm" onClick={onViewMovements}>
-            View movements
+          <Button variant="secondary" size="sm" onClick={onAdjustStock}>
+            Adjust stock
           </Button>
         </div>
       </div>
