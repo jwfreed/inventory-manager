@@ -635,8 +635,8 @@ export default function WorkOrderDetailPage() {
       {executionQuery.data?.workOrder.completedAt ? (
         <Banner
           severity="info"
-          title="Production complete"
-          description={`Produced ${formatNumber(executionQuery.data.workOrder.quantityCompleted ?? 0)} ${executionQuery.data.workOrder.outputUom} on ${formatDate(executionQuery.data.workOrder.completedAt)}.`}
+          title={isDisassembly ? 'Disassembly complete' : 'Production complete'}
+          description={`${isDisassembly ? 'Disassembled' : 'Produced'} ${formatNumber(executionQuery.data.workOrder.quantityCompleted ?? 0)} ${executionQuery.data.workOrder.outputUom} on ${formatDate(executionQuery.data.workOrder.completedAt)}.`}
           action={
             <Button
               variant="secondary"

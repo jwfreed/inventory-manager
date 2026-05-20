@@ -1133,6 +1133,39 @@ describe('WorkOrderDetailPage tabs', () => {
     expect(screen.getByText(/Produced 10 kg on/)).toBeInTheDocument()
   })
 
+  it('completed disassembly WO shows "Disassembly complete" banner, not "Production complete"', async () => {
+    mockedUseWorkOrder.mockReturnValue({
+      data: makeWorkOrder({ status: 'completed', kind: 'disassembly', quantityCompleted: 5 }),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    } as any)
+    mockedUseWorkOrderExecution.mockReturnValue({
+      data: {
+        workOrder: {
+          id: 'wo-1', status: 'completed', kind: 'disassembly',
+          outputItemId: 'item-1', outputUom: 'kg',
+          quantityPlanned: 5, quantityCompleted: 5, completedAt: '2026-03-14T00:00:00.000Z',
+        },
+        issuedTotals: [],
+        completedTotals: [],
+        remainingToComplete: 0,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as any)
+
+    renderPage()
+    await screen.findByText('Execution locked')
+
+    expect(screen.getByText('Disassembly complete')).toBeInTheDocument()
+    expect(screen.queryByText('Production complete')).not.toBeInTheDocument()
+    expect(screen.getByText(/Disassembled 5 kg on/)).toBeInTheDocument()
+    expect(screen.queryByText(/Produced \d+ kg on/)).not.toBeInTheDocument()
+  })
+
   it('inventory impact consumed items show neutral "Consumed X" label, not red negative', async () => {
     mockedUseWorkOrder.mockReturnValue({
       data: makeWorkOrder({ status: 'completed', quantityCompleted: 1 }),
