@@ -702,6 +702,182 @@ export async function updateInventoryCount(
   return count;
 }
 
+type CycleCountDelta = {
+  line: CycleCountLineRow;
+  countedQty: number;
+  systemQty: number;
+  variance: number;
+};
+
+type PreparedCountMovementDelta = {
+  delta: CycleCountDelta;
+  canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+};
+
+type PlannedCountMovementLine = {
+  delta: CycleCountDelta;
+  canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
+  unitCost: number | null;
+  extendedCost: number | null;
+  consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null;
+};
+
+async function computeCountDeltasAndPrevalidate(params: {
+  tenantId: string;
+  countId: string;
+  countLines: CycleCountLineRow[];
+  now: Date;
+  overrideRequested: boolean | undefined;
+  client: PoolClient;
+}): Promise<CycleCountDelta[]> {
+  const { tenantId, countId, countLines, now, overrideRequested, client } = params;
+  const systemMap = await loadSystemOnHandForLines(
+    tenantId,
+    now.toISOString(),
+    countLines.map((line) => ({
+      itemId: line.item_id,
+      locationId: line.location_id,
+      uom: line.uom
+    })),
+    client
+  );
+
+  const deltas = countLines.map((line) => {
+    const countedQty = toNumber(line.counted_quantity);
+    const systemQty = systemMap.get(makeOnHandKey(line.item_id, line.location_id, line.uom)) ?? 0;
+    return {
+      line,
+      countedQty,
+      systemQty,
+      variance: roundQuantity(countedQty - systemQty)
+    };
+  });
+
+  const missingReason = deltas.find((delta) => delta.variance !== 0 && !delta.line.reason_code);
+  if (missingReason) {
+    throw new Error('COUNT_REASON_REQUIRED');
+  }
+  const reconciliationPolicy = getInventoryReconciliationPolicy();
+  const escalationRequired = deltas.find(
+    (delta) =>
+      Math.abs(delta.variance) - reconciliationPolicy.autoAdjustMaxAbsQuantity > 1e-6
+      && !overrideRequested
+  );
+  if (escalationRequired) {
+    throw inventoryCountReconciliationEscalationError({
+      countId,
+      itemId: escalationRequired.line.item_id,
+      locationId: escalationRequired.line.location_id,
+      uom: escalationRequired.line.uom,
+      countedQuantity: escalationRequired.countedQty,
+      systemQuantity: escalationRequired.systemQty,
+      varianceQuantity: escalationRequired.variance,
+      autoAdjustMaxAbsQuantity: reconciliationPolicy.autoAdjustMaxAbsQuantity
+    });
+  }
+
+  const missingPositiveCost = deltas.find(
+    (delta) => delta.variance > 0 && delta.line.unit_cost_for_positive_adjustment === null
+  );
+  if (missingPositiveCost) {
+    throw new Error('CYCLE_COUNT_UNIT_COST_REQUIRED');
+  }
+
+  return deltas;
+}
+
+async function prepareCountMovementLines(params: {
+  tenantId: string;
+  countId: string;
+  warehouseId: string;
+  deltas: CycleCountDelta[];
+  movementId: string;
+  client: PoolClient;
+}): Promise<{
+  sortedPreparedDeltas: PreparedCountMovementDelta[];
+  plannedMovementLines: PlannedCountMovementLine[];
+}> {
+  const { tenantId, countId, warehouseId, deltas, movementId, client } = params;
+
+  const preparedDeltas: PreparedCountMovementDelta[] = [];
+  for (const delta of deltas) {
+    await client.query(
+      `UPDATE cycle_count_lines
+          SET system_quantity = $1,
+              variance_quantity = $2
+       WHERE id = $3
+         AND tenant_id = $4`,
+      [delta.systemQty, delta.variance, delta.line.id, tenantId]
+    );
+
+    if (Math.abs(delta.variance) <= 1e-6) {
+      continue;
+    }
+
+    const canonicalFields = await getCanonicalMovementFields(
+      tenantId,
+      delta.line.item_id,
+      delta.variance,
+      delta.line.uom,
+      client
+    );
+    preparedDeltas.push({
+      delta,
+      canonicalFields
+    });
+  }
+
+  const sortedPreparedDeltas = sortDeterministicMovementLines(
+    preparedDeltas,
+    (entry) => ({
+      tenantId,
+      warehouseId,
+      locationId: entry.delta.line.location_id,
+      itemId: entry.delta.line.item_id,
+      canonicalUom: entry.canonicalFields.canonicalUom,
+      sourceLineId: entry.delta.line.id
+    })
+  );
+
+  const plannedMovementLines: PlannedCountMovementLine[] = [];
+  for (const preparedDelta of sortedPreparedDeltas) {
+    const { delta, canonicalFields } = preparedDelta;
+    const canonicalQty = canonicalFields.quantityDeltaCanonical;
+    let unitCost: number | null = null;
+    let extendedCost: number | null = null;
+    let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null = null;
+
+    if (delta.variance < 0) {
+      consumptionPlan = await planCostLayerConsumption({
+        tenant_id: tenantId,
+        item_id: delta.line.item_id,
+        location_id: delta.line.location_id,
+        quantity: Math.abs(canonicalQty),
+        consumption_type: 'adjustment',
+        consumption_document_id: countId,
+        movement_id: movementId,
+        notes: `Cycle count shrink ${countId} line ${delta.line.line_number}`,
+        client
+      });
+      unitCost = Math.abs(canonicalQty) > 0 ? consumptionPlan.total_cost / Math.abs(canonicalQty) : null;
+      extendedCost = consumptionPlan.total_cost !== null ? -consumptionPlan.total_cost : null;
+    } else {
+      unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
+      extendedCost = roundQuantity(canonicalQty * unitCost);
+    }
+
+    plannedMovementLines.push({
+      delta,
+      canonicalFields,
+      unitCost,
+      extendedCost,
+      consumptionPlan
+    });
+  }
+
+  return { sortedPreparedDeltas, plannedMovementLines };
+}
+
 export async function postInventoryCount(
   tenantId: string,
   id: string,
@@ -885,57 +1061,14 @@ export async function postInventoryCount(
       }
 
       const now = new Date();
-      const systemMap = await loadSystemOnHandForLines(
+      const deltas = await computeCountDeltasAndPrevalidate({
         tenantId,
-        now.toISOString(),
-        countLines.map((line) => ({
-          itemId: line.item_id,
-          locationId: line.location_id,
-          uom: line.uom
-        })),
+        countId: id,
+        countLines,
+        now,
+        overrideRequested: context?.overrideRequested,
         client
-      );
-
-      const deltas = countLines.map((line) => {
-        const countedQty = toNumber(line.counted_quantity);
-        const systemQty = systemMap.get(makeOnHandKey(line.item_id, line.location_id, line.uom)) ?? 0;
-        return {
-          line,
-          countedQty,
-          systemQty,
-          variance: roundQuantity(countedQty - systemQty)
-        };
       });
-
-      const missingReason = deltas.find((delta) => delta.variance !== 0 && !delta.line.reason_code);
-      if (missingReason) {
-        throw new Error('COUNT_REASON_REQUIRED');
-      }
-      const reconciliationPolicy = getInventoryReconciliationPolicy();
-      const escalationRequired = deltas.find(
-        (delta) =>
-          Math.abs(delta.variance) - reconciliationPolicy.autoAdjustMaxAbsQuantity > 1e-6
-          && !context?.overrideRequested
-      );
-      if (escalationRequired) {
-        throw inventoryCountReconciliationEscalationError({
-          countId: id,
-          itemId: escalationRequired.line.item_id,
-          locationId: escalationRequired.line.location_id,
-          uom: escalationRequired.line.uom,
-          countedQuantity: escalationRequired.countedQty,
-          systemQuantity: escalationRequired.systemQty,
-          varianceQuantity: escalationRequired.variance,
-          autoAdjustMaxAbsQuantity: reconciliationPolicy.autoAdjustMaxAbsQuantity
-        });
-      }
-
-      const missingPositiveCost = deltas.find(
-        (delta) => delta.variance > 0 && delta.line.unit_cost_for_positive_adjustment === null
-      );
-      if (missingPositiveCost) {
-        throw new Error('CYCLE_COUNT_UNIT_COST_REQUIRED');
-      }
 
       const negativeLines = deltas
         .filter((delta) => delta.variance < 0)
@@ -964,90 +1097,15 @@ export async function postInventoryCount(
 
       const projectionOps: InventoryCommandProjectionOp[] = [];
       const itemsToRefresh = new Set<string>();
-      const preparedDeltas: Array<{
-        delta: typeof deltas[number];
-        canonicalFields: Awaited<ReturnType<typeof getCanonicalMovementFields>>;
-      }> = [];
-      for (const delta of deltas) {
-        await client.query(
-          `UPDATE cycle_count_lines
-              SET system_quantity = $1,
-                  variance_quantity = $2
-           WHERE id = $3
-             AND tenant_id = $4`,
-          [delta.systemQty, delta.variance, delta.line.id, tenantId]
-        );
-
-        if (Math.abs(delta.variance) <= 1e-6) {
-          continue;
-        }
-
-        const canonicalFields = await getCanonicalMovementFields(
-          tenantId,
-          delta.line.item_id,
-          delta.variance,
-          delta.line.uom,
-          client
-        );
-        preparedDeltas.push({
-          delta,
-          canonicalFields
-        });
-      }
-
-      const sortedPreparedDeltas = sortDeterministicMovementLines(
-        preparedDeltas,
-        (entry) => ({
-          tenantId,
-          warehouseId: currentCycleCount.warehouse_id,
-          locationId: entry.delta.line.location_id,
-          itemId: entry.delta.line.item_id,
-          canonicalUom: entry.canonicalFields.canonicalUom,
-          sourceLineId: entry.delta.line.id
-        })
-      );
       const movementId = uuidv4();
-      const plannedMovementLines: Array<{
-        delta: (typeof sortedPreparedDeltas)[number]['delta'];
-        canonicalFields: (typeof sortedPreparedDeltas)[number]['canonicalFields'];
-        unitCost: number | null;
-        extendedCost: number | null;
-        consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null;
-      }> = [];
-      for (const preparedDelta of sortedPreparedDeltas) {
-        const { delta, canonicalFields } = preparedDelta;
-        const canonicalQty = canonicalFields.quantityDeltaCanonical;
-        let unitCost: number | null = null;
-        let extendedCost: number | null = null;
-        let consumptionPlan: Awaited<ReturnType<typeof planCostLayerConsumption>> | null = null;
-
-        if (delta.variance < 0) {
-          consumptionPlan = await planCostLayerConsumption({
-            tenant_id: tenantId,
-            item_id: delta.line.item_id,
-            location_id: delta.line.location_id,
-            quantity: Math.abs(canonicalQty),
-            consumption_type: 'adjustment',
-            consumption_document_id: id,
-            movement_id: movementId,
-            notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
-            client
-          });
-          unitCost = Math.abs(canonicalQty) > 0 ? consumptionPlan.total_cost / Math.abs(canonicalQty) : null;
-          extendedCost = consumptionPlan.total_cost !== null ? -consumptionPlan.total_cost : null;
-        } else {
-          unitCost = toNumber(delta.line.unit_cost_for_positive_adjustment ?? 0);
-          extendedCost = roundQuantity(canonicalQty * unitCost);
-        }
-
-        plannedMovementLines.push({
-          delta,
-          canonicalFields,
-          unitCost,
-          extendedCost,
-          consumptionPlan
-        });
-      }
+      const { sortedPreparedDeltas, plannedMovementLines } = await prepareCountMovementLines({
+        tenantId,
+        countId: id,
+        warehouseId: currentCycleCount.warehouse_id,
+        deltas,
+        movementId,
+        client
+      });
 
       const movement = await persistInventoryMovement(client, {
         id: movementId,
