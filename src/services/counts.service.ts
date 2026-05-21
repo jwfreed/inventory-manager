@@ -878,6 +878,80 @@ async function prepareCountMovementLines(params: {
   return { sortedPreparedDeltas, plannedMovementLines };
 }
 
+async function applyCountCostLayersAndBuildProjectionOps(params: {
+  tenantId: string;
+  countId: string;
+  plannedMovementLines: PlannedCountMovementLine[];
+  movementId: string;
+  now: Date;
+  client: PoolClient;
+}): Promise<InventoryCommandProjectionOp[]> {
+  const { tenantId, countId, plannedMovementLines, movementId, now, client } = params;
+  const projectionOps: InventoryCommandProjectionOp[] = [];
+  const itemsToRefresh = new Set<string>();
+
+  for (const plannedLine of plannedMovementLines) {
+    const { delta, canonicalFields, unitCost, consumptionPlan } = plannedLine;
+    const canonicalQty = canonicalFields.quantityDeltaCanonical;
+
+    if (delta.variance < 0) {
+      if (!consumptionPlan) {
+        throw new Error('INV_COUNT_COST_PLAN_REQUIRED');
+      }
+      await applyPlannedCostLayerConsumption({
+        tenant_id: tenantId,
+        item_id: delta.line.item_id,
+        location_id: delta.line.location_id,
+        quantity: Math.abs(canonicalQty),
+        consumption_type: 'adjustment',
+        consumption_document_id: countId,
+        movement_id: movementId,
+        notes: `Cycle count shrink ${countId} line ${delta.line.line_number}`,
+        client,
+        plan: consumptionPlan
+      });
+    } else {
+      await createCostLayer({
+        tenant_id: tenantId,
+        item_id: delta.line.item_id,
+        location_id: delta.line.location_id,
+        uom: canonicalFields.canonicalUom,
+        quantity: canonicalQty,
+        unit_cost: unitCost ?? 0,
+        source_type: 'adjustment',
+        source_document_id: countId,
+        movement_id: movementId,
+        notes: `Cycle count found ${countId} line ${delta.line.line_number}`,
+        client
+      });
+    }
+
+    projectionOps.push(
+      buildInventoryBalanceProjectionOp({
+        tenantId,
+        itemId: delta.line.item_id,
+        locationId: delta.line.location_id,
+        uom: canonicalFields.canonicalUom,
+        deltaOnHand: canonicalQty,
+        mutationContext: {
+          movementId,
+          sourceLineId: delta.line.id,
+          reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
+          eventTimestamp: now,
+          stateTransition: canonicalQty > 0 ? 'adjusted->available' : 'available->adjusted'
+        }
+      })
+    );
+    itemsToRefresh.add(delta.line.item_id);
+  }
+
+  for (const itemId of itemsToRefresh.values()) {
+    projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
+  }
+
+  return projectionOps;
+}
+
 export async function postInventoryCount(
   tenantId: string,
   id: string,
@@ -1095,8 +1169,6 @@ export async function postInventoryCount(
           )
         : {};
 
-      const projectionOps: InventoryCommandProjectionOp[] = [];
-      const itemsToRefresh = new Set<string>();
       const movementId = uuidv4();
       const { sortedPreparedDeltas, plannedMovementLines } = await prepareCountMovementLines({
         tenantId,
@@ -1187,64 +1259,14 @@ export async function postInventoryCount(
         });
       }
 
-      for (const plannedLine of plannedMovementLines) {
-        const { delta, canonicalFields, unitCost, consumptionPlan } = plannedLine;
-        const canonicalQty = canonicalFields.quantityDeltaCanonical;
-
-        if (delta.variance < 0) {
-          if (!consumptionPlan) {
-            throw new Error('INV_COUNT_COST_PLAN_REQUIRED');
-          }
-          await applyPlannedCostLayerConsumption({
-            tenant_id: tenantId,
-            item_id: delta.line.item_id,
-            location_id: delta.line.location_id,
-            quantity: Math.abs(canonicalQty),
-            consumption_type: 'adjustment',
-            consumption_document_id: id,
-            movement_id: movement.movementId,
-            notes: `Cycle count shrink ${id} line ${delta.line.line_number}`,
-            client,
-            plan: consumptionPlan
-          });
-        } else {
-          await createCostLayer({
-            tenant_id: tenantId,
-            item_id: delta.line.item_id,
-            location_id: delta.line.location_id,
-            uom: canonicalFields.canonicalUom,
-            quantity: canonicalQty,
-            unit_cost: unitCost ?? 0,
-            source_type: 'adjustment',
-            source_document_id: id,
-            movement_id: movement.movementId,
-            notes: `Cycle count found ${id} line ${delta.line.line_number}`,
-            client
-          });
-        }
-
-        projectionOps.push(
-          buildInventoryBalanceProjectionOp({
-            tenantId,
-            itemId: delta.line.item_id,
-            locationId: delta.line.location_id,
-            uom: canonicalFields.canonicalUom,
-            deltaOnHand: canonicalQty,
-            mutationContext: {
-              movementId: movement.movementId,
-              sourceLineId: delta.line.id,
-              reasonCode: delta.line.reason_code ?? 'cycle_count_adjustment',
-              eventTimestamp: now,
-              stateTransition: canonicalQty > 0 ? 'adjusted->available' : 'available->adjusted'
-            }
-          })
-        );
-        itemsToRefresh.add(delta.line.item_id);
-      }
-
-      for (const itemId of itemsToRefresh.values()) {
-        projectionOps.push(buildRefreshItemCostSummaryProjectionOp(tenantId, itemId));
-      }
+      const projectionOps = await applyCountCostLayersAndBuildProjectionOps({
+        tenantId,
+        countId: id,
+        plannedMovementLines,
+        movementId: movement.movementId,
+        now,
+        client
+      });
 
       const postReconcileMap = await loadSystemOnHandForLines(
         tenantId,
