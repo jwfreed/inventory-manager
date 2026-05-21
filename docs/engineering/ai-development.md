@@ -9,10 +9,13 @@ This repository supports AI-assisted work, but only inside a strict correctness 
 - Deterministic hashing and replay are required
 - Projection rebuilds must be ledger-derived
 
-The architecture brief refers to `runInventoryCommand()` and `persistInventoryMovement()`. Those names are not implemented here today. Until a deliberate refactor introduces them, the effective boundaries are:
+The current effective boundaries are:
 
+- canonical orchestration boundary for inventory commands: `runInventoryCommand(...)` in `src/modules/platform/application/runInventoryCommand.ts` where implemented
 - transaction shell: `withTransaction(...)` / `withTransactionRetry(...)` in `src/db.ts`
-- ledger writer: `createInventoryMovement(...)` / `createInventoryMovementLine(...)` in `src/domains/inventory/internal/ledgerWriter.ts`
+- inventory ledger write path: `persistInventoryMovement(...)` and the ledger writer functions in `src/domains/inventory/internal/ledgerWriter.ts`
+
+Use these boundaries for new inventory command paths where applicable. Do not bypass the transaction shell or inventory ledger write path.
 
 ## Safe AI Workflow
 
